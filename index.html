@@ -312,11 +312,6 @@ async function loadData() {
   try {
     const wSnap = await getDocs(walletsCol());
     wallets = wSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    if (wallets.length === 0) {
-      for (const w of [{ nombre:'MercadoPago', saldo:0, color:'#1D9E75' }, { nombre:'Balanz', saldo:0, color:'#378ADD' }, { nombre:'Santander', saldo:0, color:'#7F77DD' }]) {
-        const r = await addDoc(walletsCol(), w); wallets.push({ id: r.id, ...w });
-      }
-    }
     const mSnap = await getDocs(query(movimientosCol(), orderBy('fecha','desc')));
     movimientos = mSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     setSyncStatus('ok');
@@ -402,9 +397,12 @@ window.guardarMovimiento = async () => {
 
 function renderDashboard() {
   const now=new Date(), mes=now.getMonth(), anio=now.getFullYear();
-  document.getElementById('wallet-metrics').innerHTML = wallets.map(w =>
-    `<div class="metric"><div class="metric-label"><span class="dot" style="background:${w.color}"></span>${w.nombre}</div><div class="metric-value">${fmt(w.saldo||0)}</div></div>`
-  ).join('') || '<p class="empty">Sin billeteras</p>';
+  document.getElementById('wallet-metrics').innerHTML = wallets.map(w => {
+    const logo = w.favicon
+      ? `<img src="${w.favicon}" style="width:14px;height:14px;object-fit:contain;border-radius:3px;flex-shrink:0" onerror="this.outerHTML='<span class=dot style=background:${w.color}></span>'">`
+      : `<span class="dot" style="background:${w.color}"></span>`;
+    return `<div class="metric"><div class="metric-label">${logo}${w.nombre}</div><div class="metric-value">${fmt(w.saldo||0)}</div></div>`;
+  }).join('') || '<p class="empty">Sin billeteras. Agregá una en la pestaña Billeteras.</p>';
   document.getElementById('total-saldo').textContent = fmt(wallets.reduce((a,w)=>a+(w.saldo||0),0));
   const gm = movimientos.filter(m=>{ const d=new Date(m.fecha); return d.getMonth()===mes&&d.getFullYear()===anio&&m.tipo!=='Ingreso'&&m.pagado; }).reduce((a,m)=>a+m.monto,0);
   document.getElementById('total-mes').textContent = fmt(gm);
@@ -451,7 +449,7 @@ window.editarSaldo = async id => {
 window.eliminarWallet = async id => {
   if (!confirm('¿Eliminar esta billetera?')) return;
   try { await deleteDoc(walletDoc(id)); wallets=wallets.filter(x=>x.id!==id); setSyncStatus('ok'); } catch(e){ setSyncStatus('err'); }
-  renderWallets();
+  renderWallets(); renderPresetGrid(); renderDashboard();
 };
 
 // ── Presets de billeteras ──────────────────────────────────────
