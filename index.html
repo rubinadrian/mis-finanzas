@@ -512,7 +512,7 @@ window.renderMovimientos = () => {
   const list=(filtro?movimientos.filter(m=>m.walletId===filtro):[...movimientos]).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
   document.getElementById('mov-list').innerHTML = list.length===0 ? '<p class="empty">Sin movimientos</p>' :
     list.map(m=>{ const w=wallets.find(x=>x.id===m.walletId), ei=m.tipo==='Ingreso';
-      const logoSmall = w?.favicon ? `<img src="${w.favicon}" style="width:10px;height:10px;object-fit:contain;border-radius:2px" onerror="this.outerHTML='<span class=dot style=background:${w?.color||\'#888\'}></span>'">` : `<span class="dot" style="background:${w?.color||'#888'}"></span>`;
+      const logoSmall = w?.favicon ? `<img src="${w.favicon}" style="width:10px;height:10px;object-fit:contain;border-radius:2px" onerror="this.outerHTML=\'<span class=dot style=background:${w?.color||'#888'}></span>\'">` : `<span class="dot" style="background:${w?.color||'#888'}"></span>`;
       return `<div class="item-row">
         <div>
           <div class="item-name">${m.desc}</div>
