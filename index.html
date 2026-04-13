@@ -171,6 +171,10 @@
         <div class="metric-big"><div class="lbl">Total en billeteras</div><div class="val" id="total-saldo">—</div></div>
         <div class="metric-big"><div class="lbl">Gastado este mes</div><div class="val" id="total-mes">—</div></div>
       </div>
+      <div id="servicios-pendientes-wrap" style="display:none" class="card">
+        <h2 style="color:var(--amber-text)">Servicios pendientes de cargar</h2>
+        <div id="servicios-pendientes-list"></div>
+      </div>
       <div class="card"><h2>Próximos vencimientos</h2><div id="vencimientos-list"><span class="spinner"></span></div></div>
       <div class="card"><h2>Gastos por categoría — mes actual</h2><div id="chart-categorias"><span class="spinner"></span></div></div>
     </div>
@@ -193,7 +197,7 @@
           <span class="tag sel" onclick="selTag(this,'tipo')">Gasto</span>
           <span class="tag" onclick="selTag(this,'tipo')">Ingreso</span>
           <span class="tag" onclick="selTag(this,'tipo')">Cuotas</span>
-          <span class="tag" onclick="selTag(this,'tipo')">Débito automático</span>
+          <span class="tag" onclick="selTag(this,'tipo')">Pago de servicios</span>
         </div>
         <div id="cuotas-modo" style="display:none">
           <div class="cuotas-toggle">
@@ -222,8 +226,8 @@
           <span class="tag" onclick="selTag(this,'cat')">Sueldo</span>
           <span class="tag" onclick="selTag(this,'cat')">Otro</span>
         </div>
-        <div id="venc-wrap">
-          <label>Día de vencimiento mensual (opcional)</label>
+        <div id="venc-wrap" style="display:none">
+          <label>Día de vencimiento mensual</label>
           <input type="number" id="venc-dia" placeholder="Ej: 10" min="1" max="31">
         </div>
         <button class="btn-primary" id="btn-guardar" onclick="guardarMovimiento()">Guardar movimiento</button>
@@ -337,10 +341,10 @@ window.selTag = (el, group) => {
   document.querySelectorAll('#'+cid+' .tag').forEach(t => t.classList.remove('sel'));
   el.classList.add('sel');
   if (group==='tipo') {
-    const tipo = el.textContent, isCuotas = tipo==='Cuotas';
+    const tipo = el.textContent, isCuotas = tipo==='Cuotas', isServicios = tipo==='Pago de servicios';
     document.getElementById('cuotas-modo').style.display = isCuotas ? 'block' : 'none';
     document.getElementById('ncuotas-wrap').style.display = (isCuotas && cuotasMode==='total') ? 'block' : 'none';
-    document.getElementById('venc-wrap').style.display = (tipo==='Débito automático'||isCuotas) ? 'block' : 'none';
+    document.getElementById('venc-wrap').style.display = (isServicios || isCuotas) ? 'block' : 'none';
   }
 };
 
@@ -367,6 +371,8 @@ window.guardarMovimiento = async () => {
   const tipo = getTipo(), cat = getCat();
   const vencDia = parseInt(document.getElementById('venc-dia').value) || null;
   if (!desc || isNaN(monto) || !fecha || !walletId) { alert('Completá todos los campos'); return; }
+  if (tipo==='Pago de servicios' && !vencDia) { alert('Para pagos de servicios debés indicar el día de vencimiento mensual'); return; }
+  if (tipo==='Cuotas' && !vencDia) { alert('Para cuotas debés indicar el día de vencimiento'); return; }
   const btn = document.getElementById('btn-guardar');
   btn.disabled = true; btn.textContent = 'Guardando...';
   try {
@@ -380,19 +386,79 @@ window.guardarMovimiento = async () => {
         await addDoc(movimientosCol(), mv); movimientos.unshift({ id:'', ...mv });
       }
       const w = wallets.find(x=>x.id===walletId);
-      if (w) { w.saldo=(w.saldo||0)-monto; await setDoc(walletDoc(w.id), { nombre:w.nombre, saldo:w.saldo, color:w.color }); }
+      if (w) { w.saldo=(w.saldo||0)-monto; await setDoc(walletDoc(w.id), { nombre:w.nombre, saldo:w.saldo, color:w.color, favicon:w.favicon||null }); }
     } else {
       const ei = tipo==='Ingreso';
-      const mv = { desc, monto, fecha, walletId, tipo, cat, vencDia, pagado:true, ts:Date.now() };
+      const esServicio = tipo==='Pago de servicios';
+      const mv = { desc, monto, fecha, walletId, tipo, cat, vencDia, pagado:true, esServicio, ts:Date.now() };
       const r = await addDoc(movimientosCol(), mv); movimientos.unshift({ id:r.id, ...mv });
       const w = wallets.find(x=>x.id===walletId);
-      if (w) { w.saldo=(w.saldo||0)+(ei?monto:-monto); await setDoc(walletDoc(w.id), { nombre:w.nombre, saldo:w.saldo, color:w.color }); }
+      if (w) { w.saldo=(w.saldo||0)+(ei?monto:-monto); await setDoc(walletDoc(w.id), { nombre:w.nombre, saldo:w.saldo, color:w.color, favicon:w.favicon||null }); }
     }
     setSyncStatus('ok');
     ['desc','monto','ncuotas','venc-dia'].forEach(id => document.getElementById(id).value='');
+    document.getElementById('venc-wrap').style.display='none';
     showTab('dashboard');
   } catch(e) { setSyncStatus('err'); alert('Error al guardar. Revisá tu conexión.'); console.error(e); }
   btn.disabled=false; btn.textContent='Guardar movimiento';
+};
+
+function getServiciosPendientes() {
+  const now = new Date(), hoy = now.getDate(), mes = now.getMonth(), anio = now.getFullYear();
+  // Collect all unique recurring services (by desc+vencDia)
+  const servicios = [];
+  const seen = new Set();
+  [...movimientos].sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)).forEach(m => {
+    if (!m.esServicio && m.tipo!=='Pago de servicios') return;
+    const key = m.desc.toLowerCase().trim() + '_' + m.vencDia;
+    if (seen.has(key)) return;
+    seen.add(key);
+    servicios.push(m);
+  });
+  // For each service, check if it has a payment this month
+  return servicios.filter(s => {
+    if (!s.vencDia || s.vencDia > hoy) return false; // not due yet
+    const yaCargoEsteMes = movimientos.some(m =>
+      m.desc === s.desc && m.esServicio &&
+      new Date(m.fecha).getMonth()===mes && new Date(m.fecha).getFullYear()===anio
+    );
+    return !yaCargoEsteMes;
+  });
+}
+
+window.cargarServicioPendiente = (desc, walletId, vencDia, cat) => {
+  const modal = document.createElement('div');
+  modal.className = 'saldo-modal'; modal.id = 'servicio-modal';
+  modal.innerHTML = `<div class="saldo-modal-box">
+    <h3 style="margin-bottom:4px">${desc}</h3>
+    <p>Ingresá el importe de este mes</p>
+    <input type="number" id="servicio-monto" placeholder="0" style="width:100%;font-size:18px;text-align:center;font-family:'DM Mono',monospace">
+    <div style="margin-top:10px">
+      <label style="text-transform:none;font-size:12px;color:var(--text3)">Fecha del pago</label>
+      <input type="date" id="servicio-fecha" value="${new Date().toISOString().split('T')[0]}">
+    </div>
+    <div class="modal-btns">
+      <button class="modal-cancel" onclick="document.getElementById('servicio-modal').remove()">Cancelar</button>
+      <button class="modal-confirm" onclick="confirmarServicio('${desc}','${walletId}','${vencDia}','${cat}')">Guardar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  setTimeout(()=>document.getElementById('servicio-monto').focus(),100);
+};
+
+window.confirmarServicio = async (desc, walletId, vencDia, cat) => {
+  const monto = parseFloat(document.getElementById('servicio-monto').value);
+  const fecha = document.getElementById('servicio-fecha').value;
+  if (isNaN(monto)||monto<=0) { alert('Ingresá un importe válido'); return; }
+  document.getElementById('servicio-modal').remove();
+  try {
+    const mv = { desc, monto, fecha, walletId, tipo:'Pago de servicios', cat, vencDia:parseInt(vencDia), pagado:true, esServicio:true, ts:Date.now() };
+    const r = await addDoc(movimientosCol(), mv); movimientos.unshift({ id:r.id, ...mv });
+    const w = wallets.find(x=>x.id===walletId);
+    if (w) { w.saldo=(w.saldo||0)-monto; await setDoc(walletDoc(w.id),{nombre:w.nombre,saldo:w.saldo,color:w.color,favicon:w.favicon||null}); }
+    setSyncStatus('ok');
+  } catch(e) { setSyncStatus('err'); alert('Error al guardar.'); }
+  renderDashboard();
 };
 
 function renderDashboard() {
@@ -404,6 +470,25 @@ function renderDashboard() {
     return `<div class="metric"><div class="metric-label">${logo}${w.nombre}</div><div class="metric-value">${fmt(w.saldo||0)}</div></div>`;
   }).join('') || '<p class="empty">Sin billeteras. Agregá una en la pestaña Billeteras.</p>';
   document.getElementById('total-saldo').textContent = fmt(wallets.reduce((a,w)=>a+(w.saldo||0),0));
+
+  // Servicios pendientes
+  const pendientes = getServiciosPendientes();
+  const spWrap = document.getElementById('servicios-pendientes-wrap');
+  if (pendientes.length > 0) {
+    spWrap.style.display = 'block';
+    document.getElementById('servicios-pendientes-list').innerHTML = pendientes.map(s => {
+      const w = wallets.find(x=>x.id===s.walletId);
+      return `<div class="item-row">
+        <div>
+          <div class="item-name">${s.desc}</div>
+          <div class="item-sub">vence el día ${s.vencDia} · ${w?.nombre||'billetera eliminada'}</div>
+        </div>
+        <button class="btn-sm" style="background:var(--amber-bg);color:var(--amber-text);border-color:rgba(186,117,23,0.3)" onclick="cargarServicioPendiente('${s.desc}','${s.walletId}','${s.vencDia}','${s.cat}')">Cargar importe</button>
+      </div>`;
+    }).join('');
+  } else {
+    spWrap.style.display = 'none';
+  }
   const gm = movimientos.filter(m=>{ const d=new Date(m.fecha); return d.getMonth()===mes&&d.getFullYear()===anio&&m.tipo!=='Ingreso'&&m.pagado; }).reduce((a,m)=>a+m.monto,0);
   document.getElementById('total-mes').textContent = fmt(gm);
   const hoy=now.getDate(), seen=new Set();
@@ -427,7 +512,50 @@ window.renderMovimientos = () => {
   const list=(filtro?movimientos.filter(m=>m.walletId===filtro):[...movimientos]).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
   document.getElementById('mov-list').innerHTML = list.length===0 ? '<p class="empty">Sin movimientos</p>' :
     list.map(m=>{ const w=wallets.find(x=>x.id===m.walletId), ei=m.tipo==='Ingreso';
-      return `<div class="item-row"><div><div class="item-name">${m.desc}</div><div class="item-sub"><span class="dot" style="background:${w?.color||'#888'}"></span>${w?.nombre||''} · ${m.cat} · ${m.fecha}</div></div><div style="text-align:right"><div class="${ei?'amount-pos':'amount-neg'}">${ei?'+':'-'}${fmt(m.monto)}</div>${m.tipo==='Cuotas'?'<span class="badge badge-blue" style="font-size:10px">cuota</span>':''}</div></div>`; }).join('');
+      const logoSmall = w?.favicon ? `<img src="${w.favicon}" style="width:10px;height:10px;object-fit:contain;border-radius:2px" onerror="this.outerHTML='<span class=dot style=background:${w?.color||\'#888\'}></span>'">` : `<span class="dot" style="background:${w?.color||'#888'}"></span>`;
+      return `<div class="item-row">
+        <div>
+          <div class="item-name">${m.desc}</div>
+          <div class="item-sub">${logoSmall}${w?.nombre||''} · ${m.cat} · <span style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" onclick="editarFecha('${m.id}','${m.fecha}')">${m.fecha}</span></div>
+        </div>
+        <div style="text-align:right">
+          <div class="${ei?'amount-pos':'amount-neg'}">${ei?'+':'-'}${fmt(m.monto)}</div>
+          ${m.tipo==='Cuotas'?'<span class="badge badge-blue" style="font-size:10px">cuota</span>':''}
+          ${m.tipo==='Pago de servicios'?'<span class="badge badge-amber" style="font-size:10px">servicio</span>':''}
+        </div>
+      </div>`; }).join('');
+};
+
+window.editarFecha = async (id, fechaActual) => {
+  const m = movimientos.find(x=>x.id===id);
+  if (!m) return;
+  const modal = document.createElement('div');
+  modal.className='saldo-modal'; modal.id='fecha-modal';
+  modal.innerHTML=`<div class="saldo-modal-box">
+    <h3 style="margin-bottom:4px">Cambiar fecha</h3>
+    <p style="margin-bottom:1rem">${m.desc}</p>
+    <input type="date" id="nueva-fecha" value="${fechaActual}">
+    <div class="modal-btns">
+      <button class="modal-cancel" onclick="document.getElementById('fecha-modal').remove()">Cancelar</button>
+      <button class="modal-confirm" onclick="confirmarFecha('${id}')">Guardar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+};
+
+window.confirmarFecha = async (id) => {
+  const nuevaFecha = document.getElementById('nueva-fecha').value;
+  if (!nuevaFecha) return;
+  document.getElementById('fecha-modal').remove();
+  const m = movimientos.find(x=>x.id===id);
+  if (!m) return;
+  m.fecha = nuevaFecha;
+  try {
+    const { id:mid, ...data } = m;
+    await setDoc(movDoc(id), data);
+    setSyncStatus('ok');
+  } catch(e) { setSyncStatus('err'); }
+  renderMovimientos(); renderDashboard();
 };
 
 function walletLogo(w) {
