@@ -344,7 +344,7 @@ window.selTag = (el, group) => {
     const tipo = el.textContent, isCuotas = tipo==='Cuotas', isServicios = tipo==='Pago de servicios';
     document.getElementById('cuotas-modo').style.display = isCuotas ? 'block' : 'none';
     document.getElementById('ncuotas-wrap').style.display = (isCuotas && cuotasMode==='total') ? 'block' : 'none';
-    document.getElementById('venc-wrap').style.display = (isServicios || isCuotas) ? 'block' : 'none';
+    document.getElementById('venc-wrap').style.display = isCuotas ? 'block' : 'none';
   }
 };
 
@@ -371,6 +371,7 @@ window.guardarMovimiento = async () => {
   const tipo = getTipo(), cat = getCat();
   const vencDia = parseInt(document.getElementById('venc-dia').value) || null;
   if (!desc || isNaN(monto) || !fecha || !walletId) { alert('Completá todos los campos'); return; }
+  if (tipo==='Pago de servicios' && !vencDia) { alert('Para pagos de servicios debés indicar el día de vencimiento mensual'); return; }
   if (tipo==='Pago de servicios' && !vencDia) { alert('Para pagos de servicios debés indicar el día de vencimiento mensual'); return; }
   if (tipo==='Cuotas' && !vencDia) { alert('Para cuotas debés indicar el día de vencimiento'); return; }
   const btn = document.getElementById('btn-guardar');
@@ -405,21 +406,20 @@ window.guardarMovimiento = async () => {
 
 function getServiciosPendientes() {
   const now = new Date(), hoy = now.getDate(), mes = now.getMonth(), anio = now.getFullYear();
-  // Collect all unique recurring services (by desc+vencDia)
   const servicios = [];
   const seen = new Set();
   [...movimientos].sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)).forEach(m => {
     if (!m.esServicio && m.tipo!=='Pago de servicios') return;
-    const key = m.desc.toLowerCase().trim() + '_' + m.vencDia;
+    const key = m.desc.toLowerCase().trim();
     if (seen.has(key)) return;
     seen.add(key);
     servicios.push(m);
   });
-  // For each service, check if it has a payment this month
   return servicios.filter(s => {
-    if (!s.vencDia || s.vencDia > hoy) return false; // not due yet
+    const diaVenc = new Date(s.fecha).getDate();
+    if (diaVenc > hoy) return false; // todavía no llegó este mes
     const yaCargoEsteMes = movimientos.some(m =>
-      m.desc === s.desc && m.esServicio &&
+      m.desc === s.desc && (m.esServicio || m.tipo==='Pago de servicios') &&
       new Date(m.fecha).getMonth()===mes && new Date(m.fecha).getFullYear()===anio
     );
     return !yaCargoEsteMes;
@@ -481,9 +481,9 @@ function renderDashboard() {
       return `<div class="item-row">
         <div>
           <div class="item-name">${s.desc}</div>
-          <div class="item-sub">vence el día ${s.vencDia} · ${w?.nombre||'billetera eliminada'}</div>
+          <div class="item-sub">vence el día ${new Date(s.fecha).getDate()} · ${w?.nombre||'billetera eliminada'}</div>
         </div>
-        <button class="btn-sm" style="background:var(--amber-bg);color:var(--amber-text);border-color:rgba(186,117,23,0.3)" onclick="cargarServicioPendiente('${s.desc}','${s.walletId}','${s.vencDia}','${s.cat}')">Cargar importe</button>
+        <button class="btn-sm" style="background:var(--amber-bg);color:var(--amber-text);border-color:rgba(186,117,23,0.3)" onclick="cargarServicioPendiente('${s.desc}','${s.walletId}','${new Date(s.fecha).getDate()}','${s.cat}')">Cargar importe</button>
       </div>`;
     }).join('');
   } else {
