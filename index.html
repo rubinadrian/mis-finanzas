@@ -374,7 +374,44 @@ async function loadData() {
     } catch(e){}
     setSyncStatus('ok');
   } catch(e) { setSyncStatus('err'); console.error(e); }
+  await procesarCuotasVencidas();
   renderDashboard(); renderNuevoForm(); renderPresetGrid();
+}
+
+// Procesa automáticamente cuotas vencidas que aún no fueron descontadas del saldo
+async function procesarCuotasVencidas() {
+  const hoyStr = new Date().toISOString().split('T')[0];
+  // Cuotas con fecha <= hoy que NO están marcadas como procesadas
+  const vencidas = movimientos.filter(m =>
+    m.tipo === 'Cuotas' && m.fecha <= hoyStr && !m.saldoDescontado
+  );
+  if (vencidas.length === 0) return;
+
+  // Agrupar por billetera para hacer una sola escritura por wallet
+  const saldosDelta = {};
+  for (const m of vencidas) {
+    if (!saldosDelta[m.walletId]) saldosDelta[m.walletId] = 0;
+    saldosDelta[m.walletId] -= m.monto;
+  }
+
+  try {
+    // Marcar cuotas como procesadas en Firestore
+    for (const m of vencidas) {
+      m.saldoDescontado = true;
+      const { id, ...data } = m;
+      if (id) await setDoc(movDoc(id), data);
+    }
+    // Actualizar saldos de billeteras
+    for (const [wId, delta] of Object.entries(saldosDelta)) {
+      const w = wallets.find(x => x.id === wId);
+      if (!w) continue;
+      w.saldo = (w.saldo || 0) + delta;
+      await setDoc(walletDoc(wId), { nombre:w.nombre, saldo:w.saldo, color:w.color, favicon:w.favicon||null });
+    }
+    setSyncStatus('ok');
+  } catch(e) {
+    setSyncStatus('err'); console.error('Error procesando cuotas:', e);
+  }
 }
 
 const fmt = n => '$' + Math.round(n).toLocaleString('es-AR');
@@ -495,8 +532,9 @@ window.guardarMovimiento = async () => {
       const [y,m,d] = fecha.split('-').map(Number);
       for (let i=0; i<nc; i++) {
         const fec = new Date(y, m-1+i, d);
-        const mv = { desc: desc+' (cuota '+(i+1)+'/'+nc+')', monto:cm, fecha:fec.toISOString().split('T')[0], walletId, tipo:'Cuotas', cat, vencDia, pagado:true, ts:Date.now()+i };
-        await addDoc(movimientosCol(), mv); movimientos.unshift({ id:'', ...mv });
+        // Primera cuota: ya se descuenta ahora, marcarla como procesada
+        const mv = { desc: desc+' (cuota '+(i+1)+'/'+nc+')', monto:cm, fecha:fec.toISOString().split('T')[0], walletId, tipo:'Cuotas', cat, vencDia, pagado:true, saldoDescontado: i===0, ts:Date.now()+i };
+        const r = await addDoc(movimientosCol(), mv); movimientos.unshift({ id:r.id, ...mv });
       }
       // Solo descontar la primera cuota — las siguientes se descuentan cuando vencen
       const w = wallets.find(x=>x.id===walletId);
@@ -504,7 +542,8 @@ window.guardarMovimiento = async () => {
     } else {
       const ei = tipo==='Ingreso';
       const esServicio = tipo==='Pago de servicios';
-      const mv = { desc, monto, fecha, walletId, tipo, cat, vencDia, pagado:true, esServicio, ts:Date.now() };
+      const esCuotaManual = tipo==='Cuotas';
+      const mv = { desc, monto, fecha, walletId, tipo, cat, vencDia, pagado:true, esServicio, saldoDescontado: esCuotaManual, ts:Date.now() };
       const r = await addDoc(movimientosCol(), mv); movimientos.unshift({ id:r.id, ...mv });
       const w = wallets.find(x=>x.id===walletId);
       if (w) { w.saldo=(w.saldo||0)+(ei?monto:-monto); await setDoc(walletDoc(w.id), { nombre:w.nombre, saldo:w.saldo, color:w.color, favicon:w.favicon||null }); }
@@ -785,18 +824,19 @@ window.renderMovimientos = (catFiltro, descFiltro) => {
   if (descFiltro) list = list.filter(m=>m.desc.includes(descFiltro)||m.desc===descFiltro);
   list.sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
   document.getElementById('mov-list').innerHTML = list.length===0 ? '<p class="empty">Sin movimientos</p>' :
-    list.map(m=>{ const w=wallets.find(x=>x.id===m.walletId), ei=m.tipo==='Ingreso', esTransf=m.tipo==='Transferencia';
+    list.map(m=>{ const w=wallets.find(x=>x.id===m.walletId), ei=m.tipo==='Ingreso';
+      const esTransfEntrada = m.tipo==='Transferencia' && m.desc.startsWith('Transferencia desde');
+      const esTransfSalida  = m.tipo==='Transferencia' && m.desc.startsWith('Transferencia a');
+      const esPositivo = ei || esTransfEntrada;
       const logoSmall = w?.favicon ? `<img src="${w.favicon}" style="width:10px;height:10px;object-fit:contain;border-radius:2px">` : `<span class="dot" style="background:${w?.color||'#888'}"></span>`;
       return `<div class="item-row" style="cursor:pointer" onclick="editarMovimiento('${m.id}')">
         <div style="flex:1;min-width:0">
           <div class="item-name">${m.desc}</div>
           <div class="item-sub" style="flex-wrap:wrap;gap:4px">${logoSmall}${w?.nombre||''} · ${catBadge(m.cat)}</div>
         </div>
-        <div style="text-align:right;flex-shrink:0;padding-left:12px">
-          <div class="${ei||esTransf?'amount-pos':'amount-neg'}">${ei||esTransf?'+':'-'}${fmt(m.monto)}</div>
-          <div style="font-size:11px;color:var(--text3);text-align:left;margin-top:2px">${fmtFecha(m.fecha)}</div>
-          ${m.tipo==='Cuotas'?'<span class="badge badge-blue" style="font-size:10px">cuota</span>':''}
-          ${esTransf?'<span class="badge" style="font-size:10px;background:var(--surface2);color:var(--text2)">transferencia</span>':''}
+        <div style="text-align:right;flex-shrink:0;padding-left:12px;min-width:110px">
+          <div class="${esPositivo?'amount-pos':'amount-neg'}">${esPositivo?'+':'-'}${fmt(m.monto)}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:3px">${fmtFecha(m.fecha)}</div>
         </div>
       </div>`; }).join('');
 };
