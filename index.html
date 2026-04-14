@@ -768,7 +768,6 @@ window.renderMovimientos = (catFiltro, descFiltro) => {
           <div class="${ei||esTransf?'amount-pos':'amount-neg'}">${ei||esTransf?'+':'-'}${fmt(m.monto)}</div>
           <div style="font-size:11px;color:var(--text3);text-align:left;margin-top:2px">${fmtFecha(m.fecha)}</div>
           ${m.tipo==='Cuotas'?'<span class="badge badge-blue" style="font-size:10px">cuota</span>':''}
-          ${m.tipo==='Pago de servicios'?'<span class="badge badge-amber" style="font-size:10px">servicio</span>':''}
           ${esTransf?'<span class="badge" style="font-size:10px;background:var(--surface2);color:var(--text2)">transferencia</span>':''}
         </div>
       </div>`; }).join('');
