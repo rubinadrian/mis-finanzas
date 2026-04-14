@@ -147,6 +147,7 @@
       <div class="header-left">
         <h1>Mis <span>finanzas</span></h1>
         <p id="fecha-hoy"></p>
+        <p style="font-size:11px;color:var(--text3);margin-top:1px">v1.0.1</p>
       </div>
       <div class="header-right">
         <div id="sync-badge" class="sync-status">conectando...</div>
@@ -338,6 +339,13 @@ const movDoc         = id => doc(db, 'usuarios', currentUser.uid, 'movimientos',
 window.loginGoogle  = async () => { try { await signInWithPopup(auth, provider); } catch(e) { alert('Error al iniciar sesión. Intentá de nuevo.'); } };
 window.logoutUser   = async () => { if (confirm('¿Cerrar sesión?')) await signOut(auth); };
 
+// Recargar datos cuando el usuario vuelve a la pestaña (sincronización entre dispositivos)
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && currentUser) {
+    await loadData();
+  }
+});
+
 onAuthStateChanged(auth, async user => {
   if (user) {
     currentUser = user;
@@ -456,10 +464,10 @@ window.selTag = (el, group) => {
   document.querySelectorAll('#'+cid+' .tag').forEach(t => t.classList.remove('sel'));
   el.classList.add('sel');
   if (group==='tipo') {
-    const tipo = el.textContent, isCuotas = tipo==='Cuotas', isTransferencia = tipo==='Transferencia';
+    const tipo = el.textContent, isCuotas = tipo==='Cuotas', isTransferencia = tipo==='Transferencia', isServicios = tipo==='Pago de servicios';
     document.getElementById('cuotas-modo').style.display = isCuotas ? 'block' : 'none';
     document.getElementById('ncuotas-wrap').style.display = (isCuotas && cuotasMode==='total') ? 'block' : 'none';
-    document.getElementById('venc-wrap').style.display = isCuotas ? 'block' : 'none';
+    document.getElementById('venc-wrap').style.display = (isCuotas || isServicios) ? 'block' : 'none';
     document.getElementById('transferencia-form').style.display = isTransferencia ? 'block' : 'none';
     document.getElementById('campo-wallet').style.display = isTransferencia ? 'none' : 'block';
     document.getElementById('campo-desc').style.display = isTransferencia ? 'none' : 'block';
@@ -543,9 +551,7 @@ window.guardarMovimiento = async () => {
     return;
   }
   if (!desc || isNaN(monto) || !fecha || !walletId) { alert('Completá todos los campos'); return; }
-  if (tipo==='Pago de servicios' && !vencDia) { alert('Para pagos de servicios debés indicar el día de vencimiento mensual'); return; }
-  if (tipo==='Pago de servicios' && !vencDia) { alert('Para pagos de servicios debés indicar el día de vencimiento mensual'); return; }
-  if (tipo==='Cuotas' && !vencDia) { alert('Para cuotas debés indicar el día de vencimiento'); return; }
+  if ((tipo==='Pago de servicios' || tipo==='Cuotas') && !vencDia) { alert('Ingresá el día de vencimiento mensual'); return; }
   const btn = document.getElementById('btn-guardar');
   btn.disabled = true; btn.textContent = 'Guardando...';
   try {
@@ -574,7 +580,19 @@ window.guardarMovimiento = async () => {
     setSyncStatus('ok');
     ['desc','monto','ncuotas','venc-dia'].forEach(id => document.getElementById(id).value='');
     document.getElementById('venc-wrap').style.display='none';
-    showTab('dashboard');
+    const esServicio = tipo==='Pago de servicios';
+    if (esServicio) {
+      // Quedar en el formulario listo para cargar otro servicio
+      // Pre-seleccionar "Pago de servicios" y mostrar venc-wrap
+      document.querySelectorAll('#tipo-tags .tag').forEach(t => {
+        t.classList.toggle('sel', t.textContent==='Pago de servicios');
+      });
+      document.getElementById('venc-wrap').style.display='block';
+      document.getElementById('fecha').value = new Date().toISOString().split('T')[0];
+      renderDashboard();
+    } else {
+      showTab('dashboard');
+    }
   } catch(e) { setSyncStatus('err'); alert('Error al guardar. Revisá tu conexión.'); console.error(e); }
   btn.disabled=false; btn.textContent='Guardar movimiento';
 };
