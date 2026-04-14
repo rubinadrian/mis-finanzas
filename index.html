@@ -366,6 +366,29 @@ async function loadData() {
   try {
     const wSnap = await getDocs(walletsCol());
     wallets = wSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Migrar favicons viejos a Google favicon service
+    const faviconMap = {
+      'mercadopago.com.ar': 'https://www.google.com/s2/favicons?domain=mercadopago.com.ar&sz=64',
+      'santander.com.ar':   'https://www.google.com/s2/favicons?domain=santander.com.ar&sz=64',
+      'galicia.ar':         'https://www.google.com/s2/favicons?domain=galicia.ar&sz=64',
+      'bna.com.ar':         'https://www.google.com/s2/favicons?domain=bna.com.ar&sz=64',
+      'bbva.com.ar':        'https://www.google.com/s2/favicons?domain=bbva.com.ar&sz=64',
+      'naranjax.com':       'https://www.google.com/s2/favicons?domain=naranjax.com&sz=64',
+      'brubank.com':        'https://www.google.com/s2/favicons?domain=brubank.com&sz=64',
+      'uala.com.ar':        'https://www.google.com/s2/favicons?domain=uala.com.ar&sz=64',
+      'balanz.com':         'https://www.google.com/s2/favicons?domain=balanz.com&sz=64',
+      'paypal.com':         'https://www.google.com/s2/favicons?domain=paypal.com&sz=64',
+      'wise.com':           'https://www.google.com/s2/favicons?domain=wise.com&sz=64',
+      'revolut.com':        'https://www.google.com/s2/favicons?domain=revolut.com&sz=64',
+    };
+    for (const w of wallets) {
+      if (!w.favicon) continue;
+      const match = Object.keys(faviconMap).find(k => w.favicon.includes(k) && !w.favicon.includes('google.com'));
+      if (match) {
+        w.favicon = faviconMap[match];
+        try { await setDoc(walletDoc(w.id), {nombre:w.nombre, saldo:w.saldo, color:w.color, favicon:w.favicon}); } catch(e){}
+      }
+    }
     const mSnap = await getDocs(query(movimientosCol(), orderBy('fecha','desc')));
     movimientos = mSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     try {
@@ -969,18 +992,18 @@ window.eliminarWallet = async id => {
 
 // ── Presets de billeteras ──────────────────────────────────────
 const PRESETS = [
-  { nombre:'Mercado Pago',  color:'#00b1ea', favicon:'https://www.mercadopago.com.ar/favicon.ico' },
-  { nombre:'Santander',     color:'#ec0000', favicon:'https://www.santander.com.ar/favicon.ico' },
-  { nombre:'Galicia',       color:'#e4002b', favicon:'https://www.galicia.ar/favicon.ico' },
-  { nombre:'Banco Nación',  color:'#003087', favicon:'https://www.bna.com.ar/favicon.ico' },
-  { nombre:'BBVA',          color:'#004481', favicon:'https://www.bbva.com.ar/favicon.ico' },
-  { nombre:'Naranja X',     color:'#ff5d0a', favicon:'https://www.naranjax.com/favicon.ico' },
-  { nombre:'Brubank',       color:'#6c00ff', favicon:'https://www.brubank.com/favicon.ico' },
-  { nombre:'Uala',          color:'#7b2d8b', favicon:'https://www.uala.com.ar/favicon.ico' },
-  { nombre:'Balanz',        color:'#0077c8', favicon:'https://balanz.com/favicon.ico' },
-  { nombre:'PayPal',        color:'#003087', favicon:'https://www.paypal.com/favicon.ico' },
-  { nombre:'Wise',          color:'#00b9a5', favicon:'https://wise.com/favicon.ico' },
-  { nombre:'Revolut',       color:'#191c1f', favicon:'https://www.revolut.com/favicon.ico' },
+  { nombre:'Mercado Pago',  color:'#00b1ea', favicon:'https://www.google.com/s2/favicons?domain=mercadopago.com.ar&sz=64' },
+  { nombre:'Santander',     color:'#ec0000', favicon:'https://www.google.com/s2/favicons?domain=santander.com.ar&sz=64' },
+  { nombre:'Galicia',       color:'#e4002b', favicon:'https://www.google.com/s2/favicons?domain=galicia.ar&sz=64' },
+  { nombre:'Banco Nación',  color:'#003087', favicon:'https://www.google.com/s2/favicons?domain=bna.com.ar&sz=64' },
+  { nombre:'BBVA',          color:'#004481', favicon:'https://www.google.com/s2/favicons?domain=bbva.com.ar&sz=64' },
+  { nombre:'Naranja X',     color:'#ff5d0a', favicon:'https://www.google.com/s2/favicons?domain=naranjax.com&sz=64' },
+  { nombre:'Brubank',       color:'#6c00ff', favicon:'https://www.google.com/s2/favicons?domain=brubank.com&sz=64' },
+  { nombre:'Uala',          color:'#7b2d8b', favicon:'https://www.google.com/s2/favicons?domain=uala.com.ar&sz=64' },
+  { nombre:'Balanz',        color:'#0077c8', favicon:'https://www.google.com/s2/favicons?domain=balanz.com&sz=64' },
+  { nombre:'PayPal',        color:'#003087', favicon:'https://www.google.com/s2/favicons?domain=paypal.com&sz=64' },
+  { nombre:'Wise',          color:'#00b9a5', favicon:'https://www.google.com/s2/favicons?domain=wise.com&sz=64' },
+  { nombre:'Revolut',       color:'#191c1f', favicon:'https://www.google.com/s2/favicons?domain=revolut.com&sz=64' },
   { nombre:'Efectivo',      color:'#3B6D11', favicon:null, emoji:'💵' },
 ];
 
