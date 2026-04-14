@@ -169,10 +169,10 @@
     <div class="section active" id="tab-dashboard">
       <div class="metrics-grid" id="wallet-metrics"><span class="spinner"></span></div>
       <div class="grid2" style="margin-bottom:1rem">
-        <div class="metric-big"><div class="lbl">Total en billeteras</div><div class="val" id="total-saldo">—</div></div>
-        <div class="metric-big"><div class="lbl">Gastado este mes</div><div class="val" id="total-mes">—</div>
-          <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap" id="cuotas-resumen"></div>
+        <div class="metric-big"><div class="lbl">Total en billeteras</div><div class="val" id="total-saldo">—</div>
+          <div id="cuotas-resumen" style="margin-top:6px"></div>
         </div>
+        <div class="metric-big"><div class="lbl">Gastado este mes</div><div class="val" id="total-mes">—</div></div>
       </div>
       <div id="servicios-pendientes-wrap" style="display:none" class="card">
         <h2 style="color:var(--amber-text)">Servicios pendientes de cargar</h2>
@@ -618,30 +618,25 @@ function renderDashboard() {
   const hoyStr = now.toISOString().split('T')[0];
 
   document.getElementById('wallet-metrics').innerHTML = wallets.map(w => {
+    const inicial = w.nombre[0].toUpperCase();
     const logo = w.favicon
-      ? `<img src="${w.favicon}" style="width:14px;height:14px;object-fit:contain;border-radius:3px;flex-shrink:0" onerror="this.outerHTML='<span class=dot style=background:${w.color}></span>'">`
-      : `<span class="dot" style="background:${w.color}"></span>`;
-    // Cuotas futuras de esta billetera
+      ? `<span style="display:inline-flex;width:16px;height:16px;border-radius:3px;overflow:hidden;flex-shrink:0"><img src="${w.favicon}" style="width:100%;height:100%;object-fit:contain" onerror="this.parentElement.innerHTML='<span style=font-size:10px;font-weight:700;color:white;width:100%;height:100%;background:${w.color};display:flex;align-items:center;justify-content:center>${inicial}</span>'"></span>`
+      : `<span style="display:inline-flex;width:16px;height:16px;border-radius:3px;background:${w.color};font-size:10px;font-weight:700;color:white;align-items:center;justify-content:center;flex-shrink:0">${inicial}</span>`;
     const cuotasFutW = movimientos.filter(m=>m.tipo==='Cuotas' && m.walletId===w.id && m.fecha > hoyStr);
-    const deudaMes = cuotasFutW.filter(m=>{ const d=new Date(m.fecha+'T12:00:00'); return d.getMonth()===mes&&d.getFullYear()===anio; }).reduce((a,m)=>a+m.monto,0);
     const deudaTotal = cuotasFutW.reduce((a,m)=>a+m.monto,0);
     const deudaHtml = deudaTotal > 0
-      ? `<div style="margin-top:8px;display:flex;flex-direction:column;gap:3px">
-          <span style="font-size:11px;color:var(--text3)">Cuotas mes <span style="font-weight:500;color:var(--red)">${fmt(deudaMes)}</span></span>
-          <span style="font-size:11px;color:var(--text3)">Deuda total cuotas <span style="font-weight:500;color:var(--text2)">${fmt(deudaTotal)}</span></span>
-         </div>` : '';
+      ? `<div style="margin-top:8px"><span style="font-size:11px;color:var(--text3)">Deuda en cuotas <span style="font-weight:500;color:var(--text2)">${fmt(deudaTotal)}</span></span></div>`
+      : '';
     return `<div class="metric"><div class="metric-label">${logo}${w.nombre}</div><div class="metric-value">${fmt(w.saldo||0)}</div>${deudaHtml}</div>`;
   }).join('') || '<p class="empty">Sin billeteras. Agregá una en la pestaña Billeteras.</p>';
   document.getElementById('total-saldo').textContent = fmt(wallets.reduce((a,w)=>a+(w.saldo||0),0));
 
-  // Cuotas globales para el resumen
+  // Deuda total global en cuotas
   const cuotasFuturas = movimientos.filter(m=>m.tipo==='Cuotas' && m.fecha > hoyStr);
-  const cuotasPendMes = cuotasFuturas.filter(m=>{ const d=new Date(m.fecha+'T12:00:00'); return d.getMonth()===mes&&d.getFullYear()===anio; }).reduce((a,m)=>a+m.monto,0);
   const cuotasTotal = cuotasFuturas.reduce((a,m)=>a+m.monto,0);
   const resEl = document.getElementById('cuotas-resumen');
   resEl.innerHTML = cuotasTotal > 0
-    ? `<span style="font-size:12px;color:var(--text3)">Cuotas este mes <span style="font-weight:500;color:var(--red);font-family:'DM Mono',monospace">${fmt(cuotasPendMes)}</span></span>
-       <span style="font-size:12px;color:var(--text3)">Deuda total cuotas <span style="font-weight:500;color:var(--text);font-family:'DM Mono',monospace">${fmt(cuotasTotal)}</span></span>`
+    ? `<span style="font-size:12px;color:var(--text3)">Deuda total en cuotas <span style="font-weight:500;color:var(--text);font-family:'DM Mono',monospace">${fmt(cuotasTotal)}</span></span>`
     : '';
 
   // Servicios pendientes
@@ -771,9 +766,12 @@ function renderServiciosActivos() {
 }
 
 window.filtrarPorServicio = desc => {
-  document.getElementById('filtro-mes').value = '';
-  renderMovimientos(null, desc);
-  document.getElementById('mov-titulo').textContent = `Historial — ${desc}`;
+  showTab('movimientos');
+  setTimeout(()=>{
+    document.getElementById('filtro-mes').value = '';
+    renderMovimientos(null, desc);
+    document.getElementById('mov-titulo').textContent = `Historial — ${desc}`;
+  }, 50);
 };
 
 window.eliminarServicio = async desc => {
@@ -828,7 +826,11 @@ window.renderMovimientos = (catFiltro, descFiltro) => {
       const esTransfEntrada = m.tipo==='Transferencia' && m.desc.startsWith('Transferencia desde');
       const esTransfSalida  = m.tipo==='Transferencia' && m.desc.startsWith('Transferencia a');
       const esPositivo = ei || esTransfEntrada;
-      const logoSmall = w?.favicon ? `<img src="${w.favicon}" style="width:10px;height:10px;object-fit:contain;border-radius:2px">` : `<span class="dot" style="background:${w?.color||'#888'}"></span>`;
+      const wColor = w?.color||'#888';
+      const wInicial = (w?.nombre||'?')[0].toUpperCase();
+      const logoSmall = w?.favicon
+        ? `<span style="display:inline-flex;width:14px;height:14px;border-radius:3px;overflow:hidden;flex-shrink:0;vertical-align:middle"><img src="${w.favicon}" style="width:100%;height:100%;object-fit:contain" onerror="this.parentElement.innerHTML='<span style=font-size:9px;font-weight:700;color:white;width:100%;height:100%;background:${wColor};display:flex;align-items:center;justify-content:center>${wInicial}</span>'"></span>`
+        : `<span style="display:inline-flex;width:14px;height:14px;border-radius:3px;background:${wColor};font-size:9px;font-weight:700;color:white;align-items:center;justify-content:center;flex-shrink:0;vertical-align:middle">${wInicial}</span>`;
       return `<div class="item-row" style="cursor:pointer" onclick="editarMovimiento('${m.id}')">
         <div style="flex:1;min-width:0">
           <div class="item-name">${m.desc}</div>
