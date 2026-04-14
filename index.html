@@ -162,6 +162,7 @@
       <button class="active" onclick="showTab('dashboard')">Resumen</button>
       <button onclick="showTab('movimientos')">Movimientos</button>
       <button onclick="showTab('nuevo')">+ Nuevo</button>
+      <button onclick="showTab('servicios')">Servicios</button>
       <button onclick="showTab('billeteras')">Billeteras</button>
     </div>
 
@@ -169,7 +170,9 @@
       <div class="metrics-grid" id="wallet-metrics"><span class="spinner"></span></div>
       <div class="grid2" style="margin-bottom:1rem">
         <div class="metric-big"><div class="lbl">Total en billeteras</div><div class="val" id="total-saldo">—</div></div>
-        <div class="metric-big"><div class="lbl">Gastado este mes</div><div class="val" id="total-mes">—</div></div>
+        <div class="metric-big"><div class="lbl">Gastado este mes</div><div class="val" id="total-mes">—</div>
+          <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap" id="cuotas-resumen"></div>
+        </div>
       </div>
       <div id="servicios-pendientes-wrap" style="display:none" class="card">
         <h2 style="color:var(--amber-text)">Servicios pendientes de cargar</h2>
@@ -180,10 +183,6 @@
     </div>
 
     <div class="section" id="tab-movimientos">
-      <div class="card" id="servicios-card">
-        <h2>Servicios y cuotas activos</h2>
-        <div id="servicios-activos-list"></div>
-      </div>
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
           <h2 style="margin:0" id="mov-titulo">Historial — mes actual</h2>
@@ -193,6 +192,13 @@
           </div>
         </div>
         <div id="mov-list"><span class="spinner"></span></div>
+      </div>
+    </div>
+
+    <div class="section" id="tab-servicios">
+      <div class="card">
+        <h2>Servicios y cuotas activos</h2>
+        <div id="servicios-activos-list"><span class="spinner"></span></div>
       </div>
     </div>
 
@@ -377,10 +383,11 @@ window.showTab = t => {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
-  document.querySelectorAll('.nav button')[['dashboard','movimientos','nuevo','billeteras'].indexOf(t)].classList.add('active');
+  document.querySelectorAll('.nav button')[['dashboard','movimientos','nuevo','servicios','billeteras'].indexOf(t)].classList.add('active');
   if (t==='dashboard')   renderDashboard();
   if (t==='movimientos') { renderMovimientos(); }
   if (t==='nuevo')       renderNuevoForm();
+  if (t==='servicios')   renderServiciosActivos();
   if (t==='billeteras')  { renderWallets(); renderPresetGrid(); }
 };
 
@@ -576,6 +583,18 @@ function renderDashboard() {
   }).join('') || '<p class="empty">Sin billeteras. Agregá una en la pestaña Billeteras.</p>';
   document.getElementById('total-saldo').textContent = fmt(wallets.reduce((a,w)=>a+(w.saldo||0),0));
 
+  // Cuotas pendientes (cuotas con fecha futura = aún no vencidas)
+  const now2 = new Date(), mes2=now2.getMonth(), anio2=now2.getFullYear();
+  const hoyStr = now2.toISOString().split('T')[0];
+  const cuotasFuturas = movimientos.filter(m=>m.tipo==='Cuotas' && m.fecha > hoyStr);
+  const cuotasPendMes = cuotasFuturas.filter(m=>{ const d=new Date(m.fecha+'T12:00:00'); return d.getMonth()===mes2&&d.getFullYear()===anio2; }).reduce((a,m)=>a+m.monto,0);
+  const cuotasTotal = cuotasFuturas.reduce((a,m)=>a+m.monto,0);
+  const resEl = document.getElementById('cuotas-resumen');
+  if (cuotasTotal > 0) {
+    resEl.innerHTML = `<span style="font-size:12px;color:var(--text3)">Cuotas este mes <span style="font-weight:500;color:var(--red);font-family:'DM Mono',monospace">${fmt(cuotasPendMes)}</span></span>
+    <span style="font-size:12px;color:var(--text3)">Total deuda cuotas <span style="font-weight:500;color:var(--text);font-family:'DM Mono',monospace">${fmt(cuotasTotal)}</span></span>`;
+  } else { resEl.innerHTML=''; }
+
   // Servicios pendientes
   const pendientes = getServiciosPendientes();
   const spWrap = document.getElementById('servicios-pendientes-wrap');
@@ -755,7 +774,6 @@ window.renderMovimientos = (catFiltro, descFiltro) => {
   if (catFiltro) list = list.filter(m=>m.cat===catFiltro);
   if (descFiltro) list = list.filter(m=>m.desc.includes(descFiltro)||m.desc===descFiltro);
   list.sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
-
   document.getElementById('mov-list').innerHTML = list.length===0 ? '<p class="empty">Sin movimientos</p>' :
     list.map(m=>{ const w=wallets.find(x=>x.id===m.walletId), ei=m.tipo==='Ingreso', esTransf=m.tipo==='Transferencia';
       const logoSmall = w?.favicon ? `<img src="${w.favicon}" style="width:10px;height:10px;object-fit:contain;border-radius:2px">` : `<span class="dot" style="background:${w?.color||'#888'}"></span>`;
@@ -771,7 +789,6 @@ window.renderMovimientos = (catFiltro, descFiltro) => {
           ${esTransf?'<span class="badge" style="font-size:10px;background:var(--surface2);color:var(--text2)">transferencia</span>':''}
         </div>
       </div>`; }).join('');
-  renderServiciosActivos();
 };
 
 window.editarMovimiento = id => {
@@ -865,10 +882,31 @@ function renderWallets() {
     wallets.map(w=>`<div class="item-row"><div class="item-name" style="display:flex;align-items:center;gap:8px;">${walletLogo(w)}${w.nombre}</div><div style="display:flex;align-items:center;gap:8px;"><span style="font-family:'DM Mono',monospace;font-size:14px;font-weight:500">${fmt(w.saldo||0)}</span><button class="btn-sm" onclick="editarSaldo('${w.id}')">Editar saldo</button><button class="btn-danger" onclick="eliminarWallet('${w.id}')">Eliminar</button></div></div>`).join('');
 }
 
-window.editarSaldo = async id => {
-  const w=wallets.find(x=>x.id===id);
-  const n=parseFloat(prompt('Nuevo saldo para '+w.nombre+':', w.saldo||0));
-  if (!isNaN(n)) { w.saldo=n; try { await setDoc(walletDoc(id),{nombre:w.nombre,saldo:w.saldo,color:w.color}); setSyncStatus('ok'); } catch(e){ setSyncStatus('err'); } renderWallets(); renderDashboard(); }
+window.editarSaldo = id => {
+  const w = wallets.find(x=>x.id===id);
+  const modal = document.createElement('div');
+  modal.className='saldo-modal'; modal.id='editsaldo-modal';
+  modal.innerHTML=`<div class="saldo-modal-box">
+    <h3 style="margin-bottom:4px;display:flex;align-items:center;gap:8px">${walletLogo(w)}<span>${w.nombre}</span></h3>
+    <p>Ingresá el saldo actual</p>
+    <input type="number" id="nuevo-saldo-val" value="${w.saldo||0}" style="font-size:18px;text-align:center;font-family:'DM Mono',monospace">
+    <div class="modal-btns">
+      <button class="modal-cancel" onclick="document.getElementById('editsaldo-modal').remove()">Cancelar</button>
+      <button class="modal-confirm" onclick="confirmarSaldo('${id}')">Guardar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  setTimeout(()=>{ const el=document.getElementById('nuevo-saldo-val'); el.focus(); el.select(); },100);
+};
+
+window.confirmarSaldo = async id => {
+  const n = parseFloat(document.getElementById('nuevo-saldo-val').value);
+  document.getElementById('editsaldo-modal').remove();
+  if (isNaN(n)) return;
+  const w = wallets.find(x=>x.id===id);
+  w.saldo = n;
+  try { await setDoc(walletDoc(id),{nombre:w.nombre,saldo:w.saldo,color:w.color,favicon:w.favicon||null}); setSyncStatus('ok'); } catch(e){ setSyncStatus('err'); }
+  renderWallets(); renderDashboard();
 };
 
 window.eliminarWallet = async id => {
