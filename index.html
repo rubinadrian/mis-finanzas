@@ -219,20 +219,24 @@
             <button onclick="setCuotasMode('manual',this)">Cuota individual</button>
           </div>
         </div>
-        <label>Descripción</label>
-        <input type="text" id="desc" placeholder="Ej: Tarjeta Visa, Luz, Auto...">
+        <div id="campo-desc">
+          <label>Descripción</label>
+          <input type="text" id="desc" placeholder="Ej: Tarjeta Visa, Luz, Auto...">
+        </div>
         <div class="row2">
           <div><label>Monto ($)</label><input type="number" id="monto" placeholder="0"></div>
           <div id="ncuotas-wrap" style="display:none"><label>Cant. cuotas</label><input type="number" id="ncuotas" placeholder="12" min="1"></div>
         </div>
         <div class="row2">
           <div><label>Fecha</label><input type="date" id="fecha"></div>
-          <div><label>Billetera</label><select id="wallet-sel"></select></div>
+          <div id="campo-wallet"><label>Billetera</label><select id="wallet-sel"></select></div>
         </div>
-        <label>Categoría</label>
-        <div class="tag-row" id="cat-tags"></div>
-        <div style="margin-top:8px">
-          <span class="tag" style="border-style:dashed" onclick="agregarCategoria()">+ Nueva categoría</span>
+        <div id="campo-cat">
+          <label>Categoría</label>
+          <div class="tag-row" id="cat-tags"></div>
+          <div style="margin-top:8px">
+            <span class="tag" style="border-style:dashed" onclick="agregarCategoria()">+ Nueva categoría</span>
+          </div>
         </div>
         <div id="venc-wrap" style="display:none">
           <label>Día de vencimiento mensual</label>
@@ -390,10 +394,9 @@ window.selTag = (el, group) => {
     document.getElementById('ncuotas-wrap').style.display = (isCuotas && cuotasMode==='total') ? 'block' : 'none';
     document.getElementById('venc-wrap').style.display = isCuotas ? 'block' : 'none';
     document.getElementById('transferencia-form').style.display = isTransferencia ? 'block' : 'none';
-    document.getElementById('wallet-sel').parentElement.style.display = isTransferencia ? 'none' : 'block';
-    document.getElementById('desc').parentElement.style.display = isTransferencia ? 'none' : 'block';
-    document.getElementById('cat-tags').previousElementSibling.style.display = isTransferencia ? 'none' : 'block';
-    document.getElementById('cat-tags').style.display = isTransferencia ? 'none' : 'flex';
+    document.getElementById('campo-wallet').style.display = isTransferencia ? 'none' : 'block';
+    document.getElementById('campo-desc').style.display = isTransferencia ? 'none' : 'block';
+    document.getElementById('campo-cat').style.display = isTransferencia ? 'none' : 'block';
     if (isTransferencia) {
       const opts = wallets.map(w=>`<option value="${w.id}">${w.nombre}</option>`).join('');
       document.getElementById('transfer-from').innerHTML = opts;
@@ -422,12 +425,9 @@ function renderNuevoForm() {
   document.getElementById('venc-wrap').style.display='none';
   document.getElementById('transferencia-form').style.display='none';
   // Restore hidden fields
-  document.getElementById('wallet-sel').parentElement.style.display='block';
-  const descEl = document.getElementById('desc');
-  descEl.parentElement.style.display='block';
-  // Restore cat label and tags
-  document.getElementById('cat-tags').previousElementSibling.style.display='block';
-  document.getElementById('cat-tags').style.display='flex';
+  document.getElementById('campo-wallet').style.display='block';
+  document.getElementById('campo-desc').style.display='block';
+  document.getElementById('campo-cat').style.display='block';
   // Populate selects
   const walletOpts = wallets.map(w=>`<option value="${w.id}">${w.nombre}</option>`).join('');
   document.getElementById('wallet-sel').innerHTML = walletOpts;
