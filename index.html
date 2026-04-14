@@ -414,8 +414,29 @@ const getTipo = () => document.querySelector('#tipo-tags .tag.sel')?.textContent
 const getCat  = () => document.querySelector('#cat-tags .tag.sel')?.textContent  || 'Otro';
 
 function renderNuevoForm() {
-  document.getElementById('wallet-sel').innerHTML = wallets.map(w => `<option value="${w.id}">${w.nombre}</option>`).join('');
+  // Reset tipo tags
+  document.querySelectorAll('#tipo-tags .tag').forEach((t,i)=>t.classList.toggle('sel',i===0));
+  // Reset all conditional sections
+  document.getElementById('cuotas-modo').style.display='none';
+  document.getElementById('ncuotas-wrap').style.display='none';
+  document.getElementById('venc-wrap').style.display='none';
+  document.getElementById('transferencia-form').style.display='none';
+  // Restore hidden fields
+  document.getElementById('wallet-sel').parentElement.style.display='block';
+  const descEl = document.getElementById('desc');
+  descEl.parentElement.style.display='block';
+  // Restore cat label and tags
+  document.getElementById('cat-tags').previousElementSibling.style.display='block';
+  document.getElementById('cat-tags').style.display='flex';
+  // Populate selects
+  const walletOpts = wallets.map(w=>`<option value="${w.id}">${w.nombre}</option>`).join('');
+  document.getElementById('wallet-sel').innerHTML = walletOpts;
+  document.getElementById('transfer-from').innerHTML = walletOpts;
+  document.getElementById('transfer-to').innerHTML = walletOpts;
+  if (wallets.length>1) document.getElementById('transfer-to').selectedIndex=1;
   document.getElementById('fecha').value = new Date().toISOString().split('T')[0];
+  // Clear inputs
+  ['desc','monto','ncuotas','venc-dia'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   renderCatTags();
 }
 
