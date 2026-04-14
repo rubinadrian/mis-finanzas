@@ -198,6 +198,13 @@
           <span class="tag" onclick="selTag(this,'tipo')">Ingreso</span>
           <span class="tag" onclick="selTag(this,'tipo')">Cuotas</span>
           <span class="tag" onclick="selTag(this,'tipo')">Pago de servicios</span>
+          <span class="tag" onclick="selTag(this,'tipo')">Transferencia</span>
+        </div>
+        <div id="transferencia-form" style="display:none;margin-top:12px">
+          <div class="row2">
+            <div><label>Desde</label><select id="transfer-from"></select></div>
+            <div><label>Hacia</label><select id="transfer-to"></select></div>
+          </div>
         </div>
         <div id="cuotas-modo" style="display:none">
           <div class="cuotas-toggle">
@@ -216,15 +223,9 @@
           <div><label>Billetera</label><select id="wallet-sel"></select></div>
         </div>
         <label>Categoría</label>
-        <div class="tag-row" id="cat-tags">
-          <span class="tag sel" onclick="selTag(this,'cat')">Servicios</span>
-          <span class="tag" onclick="selTag(this,'cat')">Auto</span>
-          <span class="tag" onclick="selTag(this,'cat')">Tarjeta</span>
-          <span class="tag" onclick="selTag(this,'cat')">Supermercado</span>
-          <span class="tag" onclick="selTag(this,'cat')">Salud</span>
-          <span class="tag" onclick="selTag(this,'cat')">Ocio</span>
-          <span class="tag" onclick="selTag(this,'cat')">Sueldo</span>
-          <span class="tag" onclick="selTag(this,'cat')">Otro</span>
+        <div class="tag-row" id="cat-tags"></div>
+        <div style="margin-top:8px">
+          <span class="tag" style="border-style:dashed" onclick="agregarCategoria()">+ Nueva categoría</span>
         </div>
         <div id="venc-wrap" style="display:none">
           <label>Día de vencimiento mensual</label>
@@ -279,6 +280,38 @@ const db       = getFirestore(fbApp);
 const provider = new GoogleAuthProvider();
 
 let wallets = [], movimientos = [], cuotasMode = 'total', currentUser = null;
+let categoriasExtra = [];
+
+const CATS_DEFAULT = ['Servicios','Auto','Tarjeta','Supermercado','Salud','Ocio','Sueldo','Otro'];
+const CAT_COLORS   = { Servicios:'#378ADD',Auto:'#D85A30',Tarjeta:'#7F77DD',Supermercado:'#1D9E75',Salud:'#D4537E',Ocio:'#BA7517',Sueldo:'#3B6D11',Otro:'#888780' };
+
+function getCategorias() { return [...CATS_DEFAULT, ...categoriasExtra]; }
+
+function renderCatTags(selectedCat) {
+  const sel = selectedCat || getCategorias()[0];
+  document.getElementById('cat-tags').innerHTML = getCategorias().map(c =>
+    `<span class="tag${c===sel?' sel':''}" onclick="selTag(this,'cat')">${c}</span>`
+  ).join('');
+}
+
+async function saveCategorias() {
+  try { await setDoc(doc(db,'usuarios',currentUser.uid,'config','categorias'),{extra:categoriasExtra}); } catch(e){}
+}
+
+window.agregarCategoria = async () => {
+  const nombre = prompt('Nombre de la nueva categoría:');
+  if (!nombre || !nombre.trim()) return;
+  const n = nombre.trim();
+  if (getCategorias().map(c=>c.toLowerCase()).includes(n.toLowerCase())) { alert('Esa categoría ya existe'); return; }
+  categoriasExtra.push(n);
+  await saveCategorias();
+  renderCatTags(n);
+  // select the new one
+  setTimeout(()=>{
+    const tags = document.querySelectorAll('#cat-tags .tag');
+    tags.forEach(t=>{ if(t.textContent===n){ t.classList.add('sel'); } else { t.classList.remove('sel'); } });
+  },50);
+};
 
 const walletsCol     = () => collection(db, 'usuarios', currentUser.uid, 'wallets');
 const movimientosCol = () => collection(db, 'usuarios', currentUser.uid, 'movimientos');
@@ -318,6 +351,10 @@ async function loadData() {
     wallets = wSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     const mSnap = await getDocs(query(movimientosCol(), orderBy('fecha','desc')));
     movimientos = mSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    try {
+      const catDoc = await getDocs(collection(db,'usuarios',currentUser.uid,'config'));
+      catDoc.docs.forEach(d=>{ if(d.id==='categorias') categoriasExtra=d.data().extra||[]; });
+    } catch(e){}
     setSyncStatus('ok');
   } catch(e) { setSyncStatus('err'); console.error(e); }
   renderDashboard(); renderNuevoForm(); renderPresetGrid();
@@ -341,10 +378,21 @@ window.selTag = (el, group) => {
   document.querySelectorAll('#'+cid+' .tag').forEach(t => t.classList.remove('sel'));
   el.classList.add('sel');
   if (group==='tipo') {
-    const tipo = el.textContent, isCuotas = tipo==='Cuotas', isServicios = tipo==='Pago de servicios';
+    const tipo = el.textContent, isCuotas = tipo==='Cuotas', isTransferencia = tipo==='Transferencia';
     document.getElementById('cuotas-modo').style.display = isCuotas ? 'block' : 'none';
     document.getElementById('ncuotas-wrap').style.display = (isCuotas && cuotasMode==='total') ? 'block' : 'none';
     document.getElementById('venc-wrap').style.display = isCuotas ? 'block' : 'none';
+    document.getElementById('transferencia-form').style.display = isTransferencia ? 'block' : 'none';
+    document.getElementById('wallet-sel').parentElement.style.display = isTransferencia ? 'none' : 'block';
+    document.getElementById('desc').parentElement.style.display = isTransferencia ? 'none' : 'block';
+    document.getElementById('cat-tags').previousElementSibling.style.display = isTransferencia ? 'none' : 'block';
+    document.getElementById('cat-tags').style.display = isTransferencia ? 'none' : 'flex';
+    if (isTransferencia) {
+      const opts = wallets.map(w=>`<option value="${w.id}">${w.nombre}</option>`).join('');
+      document.getElementById('transfer-from').innerHTML = opts;
+      document.getElementById('transfer-to').innerHTML = opts;
+      if (wallets.length > 1) document.getElementById('transfer-to').selectedIndex = 1;
+    }
   }
 };
 
@@ -361,6 +409,7 @@ const getCat  = () => document.querySelector('#cat-tags .tag.sel')?.textContent 
 function renderNuevoForm() {
   document.getElementById('wallet-sel').innerHTML = wallets.map(w => `<option value="${w.id}">${w.nombre}</option>`).join('');
   document.getElementById('fecha').value = new Date().toISOString().split('T')[0];
+  renderCatTags();
 }
 
 window.guardarMovimiento = async () => {
@@ -370,6 +419,34 @@ window.guardarMovimiento = async () => {
   const walletId = document.getElementById('wallet-sel').value;
   const tipo = getTipo(), cat = getCat();
   const vencDia = parseInt(document.getElementById('venc-dia').value) || null;
+  if (!fecha || !walletId && tipo !== 'Transferencia') { alert('Completá todos los campos'); return; }
+  if (tipo==='Transferencia') {
+    const fromId = document.getElementById('transfer-from').value;
+    const toId   = document.getElementById('transfer-to').value;
+    const monto2 = parseFloat(document.getElementById('monto').value);
+    if (!fromId || !toId || isNaN(monto2) || monto2 <= 0) { alert('Completá todos los campos'); return; }
+    if (fromId === toId) { alert('Las billeteras de origen y destino deben ser distintas'); return; }
+    const wFrom = wallets.find(x=>x.id===fromId);
+    const wTo   = wallets.find(x=>x.id===toId);
+    const btn = document.getElementById('btn-guardar');
+    btn.disabled=true; btn.textContent='Guardando...';
+    try {
+      const ts = Date.now();
+      const mvOut = { desc:`Transferencia a ${wTo.nombre}`, monto:monto2, fecha, walletId:fromId, tipo:'Transferencia', cat:'Transferencia', pagado:true, ts };
+      const mvIn  = { desc:`Transferencia desde ${wFrom.nombre}`, monto:monto2, fecha, walletId:toId, tipo:'Transferencia', cat:'Transferencia', pagado:true, ts:ts+1 };
+      const r1 = await addDoc(movimientosCol(), mvOut); movimientos.unshift({id:r1.id,...mvOut});
+      const r2 = await addDoc(movimientosCol(), mvIn);  movimientos.unshift({id:r2.id,...mvIn});
+      wFrom.saldo = (wFrom.saldo||0) - monto2;
+      wTo.saldo   = (wTo.saldo||0)   + monto2;
+      await setDoc(walletDoc(fromId), {nombre:wFrom.nombre,saldo:wFrom.saldo,color:wFrom.color,favicon:wFrom.favicon||null});
+      await setDoc(walletDoc(toId),   {nombre:wTo.nombre,  saldo:wTo.saldo,  color:wTo.color,  favicon:wTo.favicon||null});
+      setSyncStatus('ok');
+      document.getElementById('monto').value='';
+      showTab('dashboard');
+    } catch(e) { setSyncStatus('err'); alert('Error al guardar.'); console.error(e); }
+    btn.disabled=false; btn.textContent='Guardar movimiento';
+    return;
+  }
   if (!desc || isNaN(monto) || !fecha || !walletId) { alert('Completá todos los campos'); return; }
   if (tipo==='Pago de servicios' && !vencDia) { alert('Para pagos de servicios debés indicar el día de vencimiento mensual'); return; }
   if (tipo==='Pago de servicios' && !vencDia) { alert('Para pagos de servicios debés indicar el día de vencimiento mensual'); return; }
@@ -489,7 +566,7 @@ function renderDashboard() {
   } else {
     spWrap.style.display = 'none';
   }
-  const gm = movimientos.filter(m=>{ const d=new Date(m.fecha); return d.getMonth()===mes&&d.getFullYear()===anio&&m.tipo!=='Ingreso'&&m.pagado; }).reduce((a,m)=>a+m.monto,0);
+  const gm = movimientos.filter(m=>{ const d=new Date(m.fecha); return d.getMonth()===mes&&d.getFullYear()===anio&&m.tipo!=='Ingreso'&&m.tipo!=='Transferencia'&&m.pagado; }).reduce((a,m)=>a+m.monto,0);
   document.getElementById('total-mes').textContent = fmt(gm);
   const hoy=now.getDate(), seen=new Set();
   const venc = movimientos.filter(m=>m.vencDia&&m.tipo!=='Ingreso').filter(m=>{ const k=m.desc.replace(/ \(cuota.*\)/,'')+m.vencDia; if(seen.has(k))return false; seen.add(k); return true; })
@@ -497,9 +574,9 @@ function renderDashboard() {
   document.getElementById('vencimientos-list').innerHTML = venc.length===0 ? '<p class="empty">Sin vencimientos cargados</p>' :
     venc.map(v=>{ const dr=v.vencDia>=hoy?v.vencDia-hoy:31-hoy+v.vencDia, badge=dr<=3?'badge-red':dr<=7?'badge-amber':'badge-blue';
       return `<div class="venc-row"><span>${v.desc.replace(/ \(cuota.*\)/,'')}</span><div style="display:flex;gap:8px;align-items:center;"><span class="badge ${badge}">día ${v.vencDia}</span><span style="font-size:11px;color:var(--text3)">${dr===0?'hoy':'en '+dr+' días'}</span></div></div>`; }).join('');
-  const cc={ Servicios:'#378ADD',Auto:'#D85A30',Tarjeta:'#7F77DD',Supermercado:'#1D9E75',Salud:'#D4537E',Ocio:'#BA7517',Sueldo:'#3B6D11',Otro:'#888780' };
+  const cc = {...CAT_COLORS};
   const catMap={};
-  movimientos.filter(m=>{ const d=new Date(m.fecha); return d.getMonth()===mes&&d.getFullYear()===anio&&m.tipo!=='Ingreso'&&m.pagado; }).forEach(m=>{ catMap[m.cat]=(catMap[m.cat]||0)+m.monto; });
+  movimientos.filter(m=>{ const d=new Date(m.fecha); return d.getMonth()===mes&&d.getFullYear()===anio&&m.tipo!=='Ingreso'&&m.tipo!=='Transferencia'&&m.pagado; }).forEach(m=>{ catMap[m.cat]=(catMap[m.cat]||0)+m.monto; });
   const tot=Object.values(catMap).reduce((a,b)=>a+b,0)||1;
   document.getElementById('chart-categorias').innerHTML = Object.entries(catMap).sort((a,b)=>b[1]-a[1]).length===0 ? '<p class="empty">Sin gastos este mes</p>' :
     Object.entries(catMap).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div class="bar-wrap"><div class="bar-label"><span>${c}</span><span>${fmt(v)}</span></div><div class="bar-bg"><div class="bar-fill" style="width:${Math.round(v/tot*100)}%;background:${cc[c]||'#888'}"></div></div></div>`).join('');
@@ -511,50 +588,100 @@ window.renderMovimientos = () => {
   const filtro=sel.value;
   const list=(filtro?movimientos.filter(m=>m.walletId===filtro):[...movimientos]).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
   document.getElementById('mov-list').innerHTML = list.length===0 ? '<p class="empty">Sin movimientos</p>' :
-    list.map(m=>{ const w=wallets.find(x=>x.id===m.walletId), ei=m.tipo==='Ingreso';
-      const logoSmall = w?.favicon ? `<img src="${w.favicon}" style="width:10px;height:10px;object-fit:contain;border-radius:2px" onerror="this.outerHTML=\'<span class=dot style=background:${w?.color||'#888'}></span>\'">` : `<span class="dot" style="background:${w?.color||'#888'}"></span>`;
-      return `<div class="item-row">
+    list.map(m=>{ const w=wallets.find(x=>x.id===m.walletId), ei=m.tipo==='Ingreso', esTransf=m.tipo==='Transferencia';
+      const logoSmall = w?.favicon ? `<img src="${w.favicon}" style="width:10px;height:10px;object-fit:contain;border-radius:2px">` : `<span class="dot" style="background:${w?.color||'#888'}"></span>`;
+      return `<div class="item-row" style="cursor:pointer" onclick="editarMovimiento('${m.id}')">
         <div>
           <div class="item-name">${m.desc}</div>
-          <div class="item-sub">${logoSmall}${w?.nombre||''} · ${m.cat} · <span style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" onclick="editarFecha('${m.id}','${m.fecha}')">${m.fecha}</span></div>
+          <div class="item-sub">${logoSmall}${w?.nombre||''} · ${m.cat} · ${m.fecha}</div>
         </div>
         <div style="text-align:right">
-          <div class="${ei?'amount-pos':'amount-neg'}">${ei?'+':'-'}${fmt(m.monto)}</div>
+          <div class="${ei||esTransf?'amount-pos':'amount-neg'}">${ei||esTransf?'+':'-'}${fmt(m.monto)}</div>
           ${m.tipo==='Cuotas'?'<span class="badge badge-blue" style="font-size:10px">cuota</span>':''}
           ${m.tipo==='Pago de servicios'?'<span class="badge badge-amber" style="font-size:10px">servicio</span>':''}
+          ${esTransf?'<span class="badge" style="font-size:10px;background:var(--surface2);color:var(--text2)">transferencia</span>':''}
         </div>
       </div>`; }).join('');
 };
 
-window.editarFecha = async (id, fechaActual) => {
+window.editarMovimiento = id => {
   const m = movimientos.find(x=>x.id===id);
-  if (!m) return;
+  if (!m || !m.id) return;
+  const esTransf = m.tipo==='Transferencia';
+  const wOpts = wallets.map(w=>`<option value="${w.id}" ${w.id===m.walletId?'selected':''}>${w.nombre}</option>`).join('');
+  const catOpts = getCategorias().map(c=>`<option value="${c}" ${c===m.cat?'selected':''}>${c}</option>`).join('');
   const modal = document.createElement('div');
-  modal.className='saldo-modal'; modal.id='fecha-modal';
-  modal.innerHTML=`<div class="saldo-modal-box">
-    <h3 style="margin-bottom:4px">Cambiar fecha</h3>
-    <p style="margin-bottom:1rem">${m.desc}</p>
-    <input type="date" id="nueva-fecha" value="${fechaActual}">
+  modal.className='saldo-modal'; modal.id='edit-modal';
+  modal.innerHTML=`<div class="saldo-modal-box" style="max-width:420px">
+    <h3 style="margin-bottom:1rem">Editar movimiento</h3>
+    <label>Descripción</label>
+    <input type="text" id="edit-desc" value="${m.desc.replace(/"/g,'&quot;')}">
+    <div class="row2">
+      <div><label>Monto ($)</label><input type="number" id="edit-monto" value="${m.monto}"></div>
+      <div><label>Fecha</label><input type="date" id="edit-fecha" value="${m.fecha}"></div>
+    </div>
+    ${!esTransf?`<div class="row2">
+      <div><label>Billetera</label><select id="edit-wallet">${wOpts}</select></div>
+      <div><label>Categoría</label><select id="edit-cat">${catOpts}</select></div>
+    </div>`:''}
     <div class="modal-btns">
-      <button class="modal-cancel" onclick="document.getElementById('fecha-modal').remove()">Cancelar</button>
-      <button class="modal-confirm" onclick="confirmarFecha('${id}')">Guardar</button>
+      <button class="modal-cancel" onclick="document.getElementById('edit-modal').remove()">Cancelar</button>
+      <button class="btn-danger" style="flex:0.6" onclick="eliminarMovimiento('${id}')">Eliminar</button>
+      <button class="modal-confirm" onclick="confirmarEdicion('${id}')">Guardar</button>
     </div>
   </div>`;
   document.body.appendChild(modal);
 };
 
-window.confirmarFecha = async (id) => {
-  const nuevaFecha = document.getElementById('nueva-fecha').value;
-  if (!nuevaFecha) return;
-  document.getElementById('fecha-modal').remove();
+window.confirmarEdicion = async id => {
   const m = movimientos.find(x=>x.id===id);
   if (!m) return;
-  m.fecha = nuevaFecha;
+  const nuevaDesc  = document.getElementById('edit-desc').value.trim();
+  const nuevoMonto = parseFloat(document.getElementById('edit-monto').value);
+  const nuevaFecha = document.getElementById('edit-fecha').value;
+  const nuevoWallet= document.getElementById('edit-wallet')?.value || m.walletId;
+  const nuevaCat   = document.getElementById('edit-cat')?.value || m.cat;
+  if (!nuevaDesc || isNaN(nuevoMonto) || !nuevaFecha) { alert('Completá todos los campos'); return; }
+
+  // Ajustar saldo si cambió el monto o la billetera
+  const esIngreso = m.tipo==='Ingreso', esTransf = m.tipo==='Transferencia';
+  const wViejo = wallets.find(x=>x.id===m.walletId);
+  const wNuevo = wallets.find(x=>x.id===nuevoWallet);
+  if (!esTransf && wViejo) {
+    // revertir efecto viejo
+    wViejo.saldo = (wViejo.saldo||0) + (esIngreso ? -m.monto : m.monto);
+    // aplicar efecto nuevo
+    if (wNuevo) wNuevo.saldo = (wNuevo.saldo||0) + (esIngreso ? nuevoMonto : -nuevoMonto);
+    try {
+      await setDoc(walletDoc(wViejo.id),{nombre:wViejo.nombre,saldo:wViejo.saldo,color:wViejo.color,favicon:wViejo.favicon||null});
+      if (wNuevo && wNuevo.id !== wViejo.id) await setDoc(walletDoc(wNuevo.id),{nombre:wNuevo.nombre,saldo:wNuevo.saldo,color:wNuevo.color,favicon:wNuevo.favicon||null});
+    } catch(e) { setSyncStatus('err'); }
+  }
+
+  m.desc = nuevaDesc; m.monto = nuevoMonto; m.fecha = nuevaFecha;
+  m.walletId = nuevoWallet; m.cat = nuevaCat;
+  document.getElementById('edit-modal').remove();
   try {
     const { id:mid, ...data } = m;
     await setDoc(movDoc(id), data);
     setSyncStatus('ok');
   } catch(e) { setSyncStatus('err'); }
+  renderMovimientos(); renderDashboard();
+};
+
+window.eliminarMovimiento = async id => {
+  if (!confirm('¿Eliminar este movimiento? El saldo de la billetera se ajustará.')) return;
+  const m = movimientos.find(x=>x.id===id);
+  document.getElementById('edit-modal')?.remove();
+  if (m) {
+    const esIngreso = m.tipo==='Ingreso', esTransf = m.tipo==='Transferencia';
+    const w = wallets.find(x=>x.id===m.walletId);
+    if (!esTransf && w) {
+      w.saldo = (w.saldo||0) + (esIngreso ? -m.monto : m.monto);
+      try { await setDoc(walletDoc(w.id),{nombre:w.nombre,saldo:w.saldo,color:w.color,favicon:w.favicon||null}); } catch(e){}
+    }
+  }
+  try { await deleteDoc(movDoc(id)); movimientos=movimientos.filter(x=>x.id!==id); setSyncStatus('ok'); } catch(e){ setSyncStatus('err'); }
   renderMovimientos(); renderDashboard();
 };
 
