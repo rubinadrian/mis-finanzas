@@ -180,10 +180,17 @@
     </div>
 
     <div class="section" id="tab-movimientos">
+      <div class="card" id="servicios-card">
+        <h2>Servicios y cuotas activos</h2>
+        <div id="servicios-activos-list"></div>
+      </div>
       <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-          <h2 style="margin:0">Historial</h2>
-          <select id="filtro-wallet" onchange="renderMovimientos()" style="width:auto;font-size:13px;padding:6px 10px;"></select>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+          <h2 style="margin:0" id="mov-titulo">Historial — mes actual</h2>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <select id="filtro-wallet" onchange="renderMovimientos()" style="width:auto;font-size:13px;padding:6px 10px;"></select>
+            <input type="month" id="filtro-mes" onchange="renderMovimientos()" style="width:auto;font-size:13px;padding:6px 10px;">
+          </div>
         </div>
         <div id="mov-list"><span class="spinner"></span></div>
       </div>
@@ -368,7 +375,7 @@ window.showTab = t => {
   document.getElementById('tab-'+t).classList.add('active');
   document.querySelectorAll('.nav button')[['dashboard','movimientos','nuevo','billeteras'].indexOf(t)].classList.add('active');
   if (t==='dashboard')   renderDashboard();
-  if (t==='movimientos') renderMovimientos();
+  if (t==='movimientos') { renderMovimientos(); }
   if (t==='nuevo')       renderNuevoForm();
   if (t==='billeteras')  { renderWallets(); renderPresetGrid(); }
 };
@@ -569,39 +576,182 @@ function renderDashboard() {
   const gm = movimientos.filter(m=>{ const d=new Date(m.fecha); return d.getMonth()===mes&&d.getFullYear()===anio&&m.tipo!=='Ingreso'&&m.tipo!=='Transferencia'&&m.pagado; }).reduce((a,m)=>a+m.monto,0);
   document.getElementById('total-mes').textContent = fmt(gm);
   const hoy=now.getDate(), seen=new Set();
-  const venc = movimientos.filter(m=>m.vencDia&&m.tipo!=='Ingreso').filter(m=>{ const k=m.desc.replace(/ \(cuota.*\)/,'')+m.vencDia; if(seen.has(k))return false; seen.add(k); return true; })
-    .sort((a,b)=>{ const da=a.vencDia>=hoy?a.vencDia:a.vencDia+31, db=b.vencDia>=hoy?b.vencDia:b.vencDia+31; return da-db; }).slice(0,6);
+  // Próximos vencimientos: cuotas con vencDia + servicios recurrentes por día de fecha
+  const vencItems = [];
+  // Cuotas con vencDia
+  movimientos.filter(m=>m.vencDia&&m.tipo==='Cuotas').forEach(m=>{
+    const k='cuota_'+m.desc.replace(/ \(cuota.*\)/,'');
+    if(seen.has(k)) return; seen.add(k);
+    vencItems.push({ label: m.desc.replace(/ \(cuota.*\)/,''), dia: m.vencDia });
+  });
+  // Servicios: día del mes de su fecha original
+  const seenServ=new Set();
+  movimientos.filter(m=>m.esServicio||m.tipo==='Pago de servicios').forEach(m=>{
+    const k='serv_'+m.desc.toLowerCase().trim();
+    if(seenServ.has(k)) return; seenServ.add(k);
+    vencItems.push({ label: m.desc, dia: new Date(m.fecha+'T12:00:00').getDate() });
+  });
+  // Dedup labels
+  const vencDedup=[], seenLabel=new Set();
+  vencItems.forEach(v=>{ if(seenLabel.has(v.label)) return; seenLabel.add(v.label); vencDedup.push(v); });
+  vencDedup.sort((a,b)=>{ const da=a.dia>=hoy?a.dia:a.dia+31, db=b.dia>=hoy?b.dia:b.dia+31; return da-db; });
+  const venc = vencDedup.slice(0,8);
   document.getElementById('vencimientos-list').innerHTML = venc.length===0 ? '<p class="empty">Sin vencimientos cargados</p>' :
-    venc.map(v=>{ const dr=v.vencDia>=hoy?v.vencDia-hoy:31-hoy+v.vencDia, badge=dr<=3?'badge-red':dr<=7?'badge-amber':'badge-blue';
-      return `<div class="venc-row"><span>${v.desc.replace(/ \(cuota.*\)/,'')}</span><div style="display:flex;gap:8px;align-items:center;"><span class="badge ${badge}">día ${v.vencDia}</span><span style="font-size:11px;color:var(--text3)">${dr===0?'hoy':'en '+dr+' días'}</span></div></div>`; }).join('');
+    venc.map(v=>{ const dr=v.dia>=hoy?v.dia-hoy:31-hoy+v.dia, badge=dr<=3?'badge-red':dr<=7?'badge-amber':'badge-blue';
+      return `<div class="venc-row"><span>${v.label}</span><div style="display:flex;gap:8px;align-items:center;"><span class="badge ${badge}">día ${v.dia}</span><span style="font-size:11px;color:var(--text3)">${dr===0?'hoy':'en '+dr+' días'}</span></div></div>`; }).join('');
   const cc = {...CAT_COLORS};
   const catMap={};
   movimientos.filter(m=>{ const d=new Date(m.fecha); return d.getMonth()===mes&&d.getFullYear()===anio&&m.tipo!=='Ingreso'&&m.tipo!=='Transferencia'&&m.pagado; }).forEach(m=>{ catMap[m.cat]=(catMap[m.cat]||0)+m.monto; });
   const tot=Object.values(catMap).reduce((a,b)=>a+b,0)||1;
   document.getElementById('chart-categorias').innerHTML = Object.entries(catMap).sort((a,b)=>b[1]-a[1]).length===0 ? '<p class="empty">Sin gastos este mes</p>' :
-    Object.entries(catMap).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div class="bar-wrap"><div class="bar-label"><span>${c}</span><span>${fmt(v)}</span></div><div class="bar-bg"><div class="bar-fill" style="width:${Math.round(v/tot*100)}%;background:${cc[c]||'#888'}"></div></div></div>`).join('');
+    Object.entries(catMap).sort((a,b)=>b[1]-a[1]).map(([c,v])=>
+      `<div class="bar-wrap" style="cursor:pointer" onclick="verGastosPorCategoria('${c.replace(/'/g,"\\'")}')">
+        <div class="bar-label"><span style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;background:${cc[c]||'#888'};color:#fff;padding:2px 8px;border-radius:999px">${c}</span></span><span>${fmt(v)}</span></div>
+        <div class="bar-bg"><div class="bar-fill" style="width:${Math.round(v/tot*100)}%;background:${cc[c]||'#888'}"></div></div>
+      </div>`
+    ).join('');
 }
 
-window.renderMovimientos = () => {
-  const sel=document.getElementById('filtro-wallet');
+function fmtFecha(f) {
+  if (!f) return '';
+  const [y,m,d] = f.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function catBadge(cat) {
+  const cc = {...CAT_COLORS};
+  const col = cc[cat] || '#888780';
+  // lighten for bg
+  return `<span style="font-size:10px;background:${col}22;color:${col};border:0.5px solid ${col}44;padding:2px 8px;border-radius:999px;font-weight:500">${cat}</span>`;
+}
+
+window.verGastosPorCategoria = cat => {
+  showTab('movimientos');
+  setTimeout(()=>{
+    document.getElementById('filtro-mes').value = '';
+    renderMovimientos(cat);
+    document.getElementById('mov-titulo').textContent = `Gastos — ${cat}`;
+  },50);
+};
+
+function renderServiciosActivos() {
+  const seen = new Set();
+  const servicios = [];
+  [...movimientos].sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)).forEach(m=>{
+    if (!m.esServicio && m.tipo!=='Pago de servicios') return;
+    const k = m.desc.toLowerCase().trim();
+    if (seen.has(k)) return; seen.add(k);
+    servicios.push(m);
+  });
+  const cuotasGrupos = {};
+  movimientos.filter(m=>m.tipo==='Cuotas').forEach(m=>{
+    const base = m.desc.replace(/ \(cuota \d+\/\d+\)/,'').trim();
+    if (!cuotasGrupos[base]) cuotasGrupos[base] = [];
+    cuotasGrupos[base].push(m);
+  });
+  let html = '';
+  if (servicios.length===0 && Object.keys(cuotasGrupos).length===0) {
+    html = '<p class="empty">No hay servicios ni cuotas activas</p>';
+  } else {
+    servicios.forEach(s=>{
+      const w = wallets.find(x=>x.id===s.walletId);
+      html += `<div class="item-row">
+        <div><div class="item-name">${s.desc}</div>
+        <div class="item-sub">Servicio mensual · ${w?.nombre||''}</div></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-sm" onclick="filtrarPorServicio('${s.desc.replace(/'/g,"\\'")}')">Ver pagos</button>
+          <button class="btn-danger" onclick="eliminarServicio('${s.desc.replace(/'/g,"\\'")}')">Eliminar</button>
+        </div>
+      </div>`;
+    });
+    Object.entries(cuotasGrupos).forEach(([base, cuotas])=>{
+      const pagadas = cuotas.filter(c=>c.pagado).length;
+      const total = cuotas.length;
+      const w = wallets.find(x=>x.id===cuotas[0]?.walletId);
+      html += `<div class="item-row">
+        <div><div class="item-name">${base}</div>
+        <div class="item-sub">Cuotas ${pagadas}/${total} · ${w?.nombre||''}</div></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn-sm" onclick="filtrarPorServicio('${base.replace(/'/g,"\\'")}')">Ver cuotas</button>
+          <button class="btn-danger" onclick="eliminarCuotas('${base.replace(/'/g,"\\'")}')">Eliminar todas</button>
+        </div>
+      </div>`;
+    });
+  }
+  document.getElementById('servicios-activos-list').innerHTML = html;
+}
+
+window.filtrarPorServicio = desc => {
+  document.getElementById('filtro-mes').value = '';
+  renderMovimientos(null, desc);
+  document.getElementById('mov-titulo').textContent = `Historial — ${desc}`;
+};
+
+window.eliminarServicio = async desc => {
+  const relacionados = movimientos.filter(m=>(m.esServicio||m.tipo==='Pago de servicios') && m.desc===desc);
+  if (!confirm(`¿Eliminar el servicio "${desc}" y sus ${relacionados.length} registros? Los saldos se ajustarán.`)) return;
+  for (const m of relacionados) {
+    const w = wallets.find(x=>x.id===m.walletId);
+    if (w) { w.saldo=(w.saldo||0)+m.monto; await setDoc(walletDoc(w.id),{nombre:w.nombre,saldo:w.saldo,color:w.color,favicon:w.favicon||null}); }
+    try { await deleteDoc(movDoc(m.id)); } catch(e){}
+  }
+  movimientos = movimientos.filter(m=>!(( m.esServicio||m.tipo==='Pago de servicios') && m.desc===desc));
+  setSyncStatus('ok'); renderMovimientos(); renderDashboard(); renderServiciosActivos();
+};
+
+window.eliminarCuotas = async base => {
+  const relacionados = movimientos.filter(m=>m.tipo==='Cuotas' && m.desc.startsWith(base));
+  if (!confirm(`¿Eliminar todas las cuotas de "${base}" (${relacionados.length} registros)?`)) return;
+  for (const m of relacionados) {
+    const w = wallets.find(x=>x.id===m.walletId);
+    if (w) { w.saldo=(w.saldo||0)+m.monto; await setDoc(walletDoc(w.id),{nombre:w.nombre,saldo:w.saldo,color:w.color,favicon:w.favicon||null}); }
+    try { await deleteDoc(movDoc(m.id)); } catch(e){}
+  }
+  movimientos = movimientos.filter(m=>!(m.tipo==='Cuotas' && m.desc.startsWith(base)));
+  setSyncStatus('ok'); renderMovimientos(); renderDashboard(); renderServiciosActivos();
+};
+
+window.renderMovimientos = (catFiltro, descFiltro) => {
+  const sel = document.getElementById('filtro-wallet');
   sel.innerHTML='<option value="">Todas las billeteras</option>'+wallets.map(w=>`<option value="${w.id}">${w.nombre}</option>`).join('');
-  const filtro=sel.value;
-  const list=(filtro?movimientos.filter(m=>m.walletId===filtro):[...movimientos]).sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
+  const filtroWallet = sel.value;
+
+  // Mes: default mes actual
+  const mesFiltroEl = document.getElementById('filtro-mes');
+  const now = new Date();
+  if (!mesFiltroEl.value && !catFiltro && !descFiltro) {
+    mesFiltroEl.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  }
+  const mesFiltro = mesFiltroEl.value;
+
+  let list = [...movimientos];
+  if (filtroWallet) list = list.filter(m=>m.walletId===filtroWallet);
+  if (mesFiltro && !catFiltro && !descFiltro) {
+    const [fy,fm] = mesFiltro.split('-').map(Number);
+    list = list.filter(m=>{ const d=new Date(m.fecha+'T12:00:00'); return d.getFullYear()===fy && d.getMonth()===fm-1; });
+    document.getElementById('mov-titulo').textContent = `Historial — ${mesFiltro}`;
+  }
+  if (catFiltro) list = list.filter(m=>m.cat===catFiltro);
+  if (descFiltro) list = list.filter(m=>m.desc.includes(descFiltro)||m.desc===descFiltro);
+  list.sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
+
   document.getElementById('mov-list').innerHTML = list.length===0 ? '<p class="empty">Sin movimientos</p>' :
     list.map(m=>{ const w=wallets.find(x=>x.id===m.walletId), ei=m.tipo==='Ingreso', esTransf=m.tipo==='Transferencia';
       const logoSmall = w?.favicon ? `<img src="${w.favicon}" style="width:10px;height:10px;object-fit:contain;border-radius:2px">` : `<span class="dot" style="background:${w?.color||'#888'}"></span>`;
       return `<div class="item-row" style="cursor:pointer" onclick="editarMovimiento('${m.id}')">
-        <div>
+        <div style="flex:1;min-width:0">
           <div class="item-name">${m.desc}</div>
-          <div class="item-sub">${logoSmall}${w?.nombre||''} · ${m.cat} · ${m.fecha}</div>
+          <div class="item-sub" style="flex-wrap:wrap;gap:4px">${logoSmall}${w?.nombre||''} · ${catBadge(m.cat)}</div>
         </div>
-        <div style="text-align:right">
+        <div style="text-align:right;flex-shrink:0;padding-left:12px">
           <div class="${ei||esTransf?'amount-pos':'amount-neg'}">${ei||esTransf?'+':'-'}${fmt(m.monto)}</div>
+          <div style="font-size:11px;color:var(--text3);text-align:left;margin-top:2px">${fmtFecha(m.fecha)}</div>
           ${m.tipo==='Cuotas'?'<span class="badge badge-blue" style="font-size:10px">cuota</span>':''}
           ${m.tipo==='Pago de servicios'?'<span class="badge badge-amber" style="font-size:10px">servicio</span>':''}
           ${esTransf?'<span class="badge" style="font-size:10px;background:var(--surface2);color:var(--text2)">transferencia</span>':''}
         </div>
       </div>`; }).join('');
+  renderServiciosActivos();
 };
 
 window.editarMovimiento = id => {
