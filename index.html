@@ -124,10 +124,72 @@
   .modal-confirm { background: var(--text); border: none; color: white; }
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border2); border-top-color: var(--text); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  @media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } .row2 { grid-template-columns: 1fr; } .nav { width: 100%; } }
+  .modal-danger { background: var(--red-bg); border: none; color: var(--red-text); }
+  .toast { position:fixed; bottom:1.5rem; left:50%; transform:translateX(-50%); background:var(--text); color:white; padding:10px 20px; border-radius:var(--radius-sm); font-size:13px; z-index:200; opacity:0; transition:opacity 0.2s; pointer-events:none; }
+  .toast.show { opacity:1; }
 </style>
 </head>
 <body>
+<div id="toast" class="toast"></div>
+
+<script>
+// ── Modal & Toast utilities ─────────────────────────────────────
+function showToast(msg, duration=2500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), duration);
+}
+
+function showAlert(msg, onOk) {
+  const m = document.createElement('div');
+  m.className='saldo-modal'; m.id='alert-modal';
+  m.innerHTML=`<div class="saldo-modal-box" style="max-width:340px;text-align:center">
+    <p style="font-size:15px;color:var(--text);margin-bottom:1.25rem;line-height:1.5">${msg}</p>
+    <button class="modal-confirm" style="width:100%" onclick="document.getElementById('alert-modal').remove();${onOk?'('+onOk+')();':''}">Aceptar</button>
+  </div>`;
+  document.body.appendChild(m);
+}
+
+function showConfirm(msg, onConfirm, isDanger=false) {
+  const m = document.createElement('div');
+  m.className='saldo-modal'; m.id='confirm-modal';
+  m.innerHTML=`<div class="saldo-modal-box" style="max-width:360px">
+    <p style="font-size:15px;color:var(--text);margin-bottom:1.25rem;line-height:1.5">${msg}</p>
+    <div class="modal-btns">
+      <button class="modal-cancel" onclick="document.getElementById('confirm-modal').remove()">Cancelar</button>
+      <button class="${isDanger?'modal-danger':'modal-confirm'}" id="confirm-ok-btn">Confirmar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+  document.getElementById('confirm-ok-btn').onclick = () => {
+    document.getElementById('confirm-modal').remove();
+    onConfirm();
+  };
+}
+
+function showPromptModal(msg, placeholder, onOk) {
+  const m = document.createElement('div');
+  m.className='saldo-modal'; m.id='prompt-modal';
+  m.innerHTML=`<div class="saldo-modal-box" style="max-width:340px">
+    <p style="font-size:15px;color:var(--text);margin-bottom:1rem;line-height:1.5">${msg}</p>
+    <input type="text" id="prompt-input" placeholder="${placeholder}" style="margin-bottom:0">
+    <div class="modal-btns">
+      <button class="modal-cancel" onclick="document.getElementById('prompt-modal').remove()">Cancelar</button>
+      <button class="modal-confirm" id="prompt-ok-btn">Aceptar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+  setTimeout(()=>document.getElementById('prompt-input').focus(),100);
+  document.getElementById('prompt-ok-btn').onclick = () => {
+    const val = document.getElementById('prompt-input').value.trim();
+    document.getElementById('prompt-modal').remove();
+    onOk(val);
+  };
+  document.getElementById('prompt-input').addEventListener('keydown', e=>{
+    if(e.key==='Enter') document.getElementById('prompt-ok-btn').click();
+  });
+}
+</script>
 
 <div id="login-screen">
   <div class="login-card">
@@ -316,19 +378,17 @@ async function saveCategorias() {
   try { await setDoc(doc(db,'usuarios',currentUser.uid,'config','categorias'),{extra:categoriasExtra}); } catch(e){}
 }
 
-window.agregarCategoria = async () => {
-  const nombre = prompt('Nombre de la nueva categoría:');
-  if (!nombre || !nombre.trim()) return;
-  const n = nombre.trim();
-  if (getCategorias().map(c=>c.toLowerCase()).includes(n.toLowerCase())) { alert('Esa categoría ya existe'); return; }
-  categoriasExtra.push(n);
-  await saveCategorias();
-  renderCatTags(n);
-  // select the new one
-  setTimeout(()=>{
-    const tags = document.querySelectorAll('#cat-tags .tag');
-    tags.forEach(t=>{ if(t.textContent===n){ t.classList.add('sel'); } else { t.classList.remove('sel'); } });
-  },50);
+window.agregarCategoria = () => {
+  showPromptModal('Nueva categoría', 'Ej: Viajes, Mascotas...', async (n) => {
+    if (!n) return;
+    if (getCategorias().map(c=>c.toLowerCase()).includes(n.toLowerCase())) { showAlert('Esa categoría ya existe'); return; }
+    categoriasExtra.push(n);
+    await saveCategorias();
+    renderCatTags(n);
+    setTimeout(()=>{
+      document.querySelectorAll('#cat-tags .tag').forEach(t=>{ t.classList.toggle('sel', t.textContent===n); });
+    },50);
+  });
 };
 
 const walletsCol     = () => collection(db, 'usuarios', currentUser.uid, 'wallets');
@@ -336,8 +396,8 @@ const movimientosCol = () => collection(db, 'usuarios', currentUser.uid, 'movimi
 const walletDoc      = id => doc(db, 'usuarios', currentUser.uid, 'wallets', id);
 const movDoc         = id => doc(db, 'usuarios', currentUser.uid, 'movimientos', id);
 
-window.loginGoogle  = async () => { try { await signInWithPopup(auth, provider); } catch(e) { alert('Error al iniciar sesión. Intentá de nuevo.'); } };
-window.logoutUser   = async () => { if (confirm('¿Cerrar sesión?')) await signOut(auth); };
+window.loginGoogle  = async () => { try { await signInWithPopup(auth, provider); } catch(e) { showAlert('Error al iniciar sesión. Intentá de nuevo.'); } };
+window.logoutUser   = () => { showConfirm('¿Cerrar sesión?', ()=>signOut(auth)); };
 
 // Recargar datos cuando el usuario vuelve a la pestaña (sincronización entre dispositivos)
 document.addEventListener('visibilitychange', async () => {
@@ -522,13 +582,13 @@ window.guardarMovimiento = async () => {
   const walletId = document.getElementById('wallet-sel').value;
   const tipo = getTipo(), cat = getCat();
   const vencDia = parseInt(document.getElementById('venc-dia').value) || null;
-  if (!fecha || !walletId && tipo !== 'Transferencia') { alert('Completá todos los campos'); return; }
+  if (!fecha || !walletId && tipo !== 'Transferencia') { showAlert('Completá todos los campos'); return; }
   if (tipo==='Transferencia') {
     const fromId = document.getElementById('transfer-from').value;
     const toId   = document.getElementById('transfer-to').value;
     const monto2 = parseFloat(document.getElementById('monto').value);
-    if (!fromId || !toId || isNaN(monto2) || monto2 <= 0) { alert('Completá todos los campos'); return; }
-    if (fromId === toId) { alert('Las billeteras de origen y destino deben ser distintas'); return; }
+    if (!fromId || !toId || isNaN(monto2) || monto2 <= 0) { showAlert('Completá todos los campos'); return; }
+    if (fromId === toId) { showAlert('Las billeteras de origen y destino deben ser distintas'); return; }
     const wFrom = wallets.find(x=>x.id===fromId);
     const wTo   = wallets.find(x=>x.id===toId);
     const btn = document.getElementById('btn-guardar');
@@ -546,12 +606,12 @@ window.guardarMovimiento = async () => {
       setSyncStatus('ok');
       document.getElementById('monto').value='';
       showTab('dashboard');
-    } catch(e) { setSyncStatus('err'); alert('Error al guardar.'); console.error(e); }
+    } catch(e) { setSyncStatus('err'); showAlert('Error al guardar. Revisá tu conexión.'); console.error(e); }
     btn.disabled=false; btn.textContent='Guardar movimiento';
     return;
   }
-  if (!desc || isNaN(monto) || !fecha || !walletId) { alert('Completá todos los campos'); return; }
-  if ((tipo==='Pago de servicios' || tipo==='Cuotas') && !vencDia) { alert('Ingresá el día de vencimiento mensual'); return; }
+  if (!desc || isNaN(monto) || !fecha || !walletId) { showAlert('Completá todos los campos'); return; }
+  if ((tipo==='Pago de servicios' || tipo==='Cuotas') && !vencDia) { showAlert('Ingresá el día de vencimiento mensual'); return; }
   const btn = document.getElementById('btn-guardar');
   btn.disabled = true; btn.textContent = 'Guardando...';
   try {
@@ -593,7 +653,7 @@ window.guardarMovimiento = async () => {
     } else {
       showTab('dashboard');
     }
-  } catch(e) { setSyncStatus('err'); alert('Error al guardar. Revisá tu conexión.'); console.error(e); }
+  } catch(e) { setSyncStatus('err'); showAlert('Error al guardar. Revisá tu conexión.'); console.error(e); }
   btn.disabled=false; btn.textContent='Guardar movimiento';
 };
 
@@ -642,7 +702,7 @@ window.cargarServicioPendiente = (desc, walletId, vencDia, cat) => {
 window.confirmarServicio = async (desc, walletId, vencDia, cat) => {
   const monto = parseFloat(document.getElementById('servicio-monto').value);
   const fecha = document.getElementById('servicio-fecha').value;
-  if (isNaN(monto)||monto<=0) { alert('Ingresá un importe válido'); return; }
+  if (isNaN(monto)||monto<=0) { showAlert('Ingresá un importe válido'); return; }
   document.getElementById('servicio-modal').remove();
   try {
     const mv = { desc, monto, fecha, walletId, tipo:'Pago de servicios', cat, vencDia:parseInt(vencDia), pagado:true, esServicio:true, ts:Date.now() };
@@ -650,7 +710,7 @@ window.confirmarServicio = async (desc, walletId, vencDia, cat) => {
     const w = wallets.find(x=>x.id===walletId);
     if (w) { w.saldo=(w.saldo||0)-monto; await setDoc(walletDoc(w.id),{nombre:w.nombre,saldo:w.saldo,color:w.color,favicon:w.favicon||null}); }
     setSyncStatus('ok');
-  } catch(e) { setSyncStatus('err'); alert('Error al guardar.'); }
+  } catch(e) { setSyncStatus('err'); showAlert('Error al guardar.'); }
   renderDashboard();
 };
 
@@ -817,26 +877,28 @@ window.filtrarPorServicio = desc => {
 
 window.eliminarServicio = async desc => {
   const relacionados = movimientos.filter(m=>(m.esServicio||m.tipo==='Pago de servicios') && m.desc===desc);
-  if (!confirm(`¿Eliminar el servicio "${desc}" y sus ${relacionados.length} registros? Los saldos se ajustarán.`)) return;
-  for (const m of relacionados) {
-    const w = wallets.find(x=>x.id===m.walletId);
-    if (w) { w.saldo=(w.saldo||0)+m.monto; await setDoc(walletDoc(w.id),{nombre:w.nombre,saldo:w.saldo,color:w.color,favicon:w.favicon||null}); }
-    try { await deleteDoc(movDoc(m.id)); } catch(e){}
-  }
-  movimientos = movimientos.filter(m=>!(( m.esServicio||m.tipo==='Pago de servicios') && m.desc===desc));
-  setSyncStatus('ok'); renderMovimientos(); renderDashboard(); renderServiciosActivos();
+  showConfirm(`¿Eliminar el servicio "${desc}" y sus ${relacionados.length} registros? Los saldos se ajustarán.`, async ()=>{
+    for (const m of relacionados) {
+      const w = wallets.find(x=>x.id===m.walletId);
+      if (w) { w.saldo=(w.saldo||0)+m.monto; await setDoc(walletDoc(w.id),{nombre:w.nombre,saldo:w.saldo,color:w.color,favicon:w.favicon||null}); }
+      try { await deleteDoc(movDoc(m.id)); } catch(e){}
+    }
+    movimientos = movimientos.filter(m=>!((m.esServicio||m.tipo==='Pago de servicios') && m.desc===desc));
+    setSyncStatus('ok'); showToast('Servicio eliminado'); renderMovimientos(); renderDashboard(); renderServiciosActivos();
+  }, true);
 };
 
 window.eliminarCuotas = async base => {
   const relacionados = movimientos.filter(m=>m.tipo==='Cuotas' && m.desc.startsWith(base));
-  if (!confirm(`¿Eliminar todas las cuotas de "${base}" (${relacionados.length} registros)?`)) return;
-  for (const m of relacionados) {
-    const w = wallets.find(x=>x.id===m.walletId);
-    if (w) { w.saldo=(w.saldo||0)+m.monto; await setDoc(walletDoc(w.id),{nombre:w.nombre,saldo:w.saldo,color:w.color,favicon:w.favicon||null}); }
-    try { await deleteDoc(movDoc(m.id)); } catch(e){}
-  }
-  movimientos = movimientos.filter(m=>!(m.tipo==='Cuotas' && m.desc.startsWith(base)));
-  setSyncStatus('ok'); renderMovimientos(); renderDashboard(); renderServiciosActivos();
+  showConfirm(`¿Eliminar todas las cuotas de "${base}" (${relacionados.length} registros)? Los saldos se ajustarán.`, async ()=>{
+    for (const m of relacionados) {
+      const w = wallets.find(x=>x.id===m.walletId);
+      if (w && m.saldoDescontado) { w.saldo=(w.saldo||0)+m.monto; await setDoc(walletDoc(w.id),{nombre:w.nombre,saldo:w.saldo,color:w.color,favicon:w.favicon||null}); }
+      try { await deleteDoc(movDoc(m.id)); } catch(e){}
+    }
+    movimientos = movimientos.filter(m=>!(m.tipo==='Cuotas' && m.desc.startsWith(base)));
+    setSyncStatus('ok'); showToast('Cuotas eliminadas'); renderMovimientos(); renderDashboard(); renderServiciosActivos();
+  }, true);
 };
 
 window.renderMovimientos = (catFiltro, descFiltro) => {
@@ -921,7 +983,7 @@ window.confirmarEdicion = async id => {
   const nuevaFecha = document.getElementById('edit-fecha').value;
   const nuevoWallet= document.getElementById('edit-wallet')?.value || m.walletId;
   const nuevaCat   = document.getElementById('edit-cat')?.value || m.cat;
-  if (!nuevaDesc || isNaN(nuevoMonto) || !nuevaFecha) { alert('Completá todos los campos'); return; }
+  if (!nuevaDesc || isNaN(nuevoMonto) || !nuevaFecha) { showAlert('Completá todos los campos'); return; }
 
   // Ajustar saldo si cambió el monto o la billetera
   const esIngreso = m.tipo==='Ingreso', esTransf = m.tipo==='Transferencia';
@@ -950,19 +1012,21 @@ window.confirmarEdicion = async id => {
 };
 
 window.eliminarMovimiento = async id => {
-  if (!confirm('¿Eliminar este movimiento? El saldo de la billetera se ajustará.')) return;
-  const m = movimientos.find(x=>x.id===id);
-  document.getElementById('edit-modal')?.remove();
-  if (m) {
-    const esIngreso = m.tipo==='Ingreso', esTransf = m.tipo==='Transferencia';
-    const w = wallets.find(x=>x.id===m.walletId);
-    if (!esTransf && w) {
-      w.saldo = (w.saldo||0) + (esIngreso ? -m.monto : m.monto);
-      try { await setDoc(walletDoc(w.id),{nombre:w.nombre,saldo:w.saldo,color:w.color,favicon:w.favicon||null}); } catch(e){}
+  showConfirm('¿Eliminar este movimiento? El saldo de la billetera se ajustará.', async ()=>{
+    const m = movimientos.find(x=>x.id===id);
+    document.getElementById('edit-modal')?.remove();
+    if (m) {
+      const esIngreso = m.tipo==='Ingreso', esTransf = m.tipo==='Transferencia';
+      const w = wallets.find(x=>x.id===m.walletId);
+      if (!esTransf && w && m.saldoDescontado !== false) {
+        w.saldo = (w.saldo||0) + (esIngreso ? -m.monto : m.monto);
+        try { await setDoc(walletDoc(w.id),{nombre:w.nombre,saldo:w.saldo,color:w.color,favicon:w.favicon||null}); } catch(e){}
+      }
     }
-  }
-  try { await deleteDoc(movDoc(id)); movimientos=movimientos.filter(x=>x.id!==id); setSyncStatus('ok'); } catch(e){ setSyncStatus('err'); }
-  renderMovimientos(); renderDashboard();
+    try { await deleteDoc(movDoc(id)); movimientos=movimientos.filter(x=>x.id!==id); setSyncStatus('ok'); } catch(e){ setSyncStatus('err'); }
+    showToast('Movimiento eliminado');
+    renderMovimientos(); renderDashboard();
+  }, true);
 };
 
 function walletLogo(w) {
@@ -1003,9 +1067,12 @@ window.confirmarSaldo = async id => {
 };
 
 window.eliminarWallet = async id => {
-  if (!confirm('¿Eliminar esta billetera?')) return;
-  try { await deleteDoc(walletDoc(id)); wallets=wallets.filter(x=>x.id!==id); setSyncStatus('ok'); } catch(e){ setSyncStatus('err'); }
-  renderWallets(); renderPresetGrid(); renderDashboard();
+  const w = wallets.find(x=>x.id===id);
+  showConfirm(`¿Eliminar la billetera "${w?.nombre}"?`, async ()=>{
+    try { await deleteDoc(walletDoc(id)); wallets=wallets.filter(x=>x.id!==id); setSyncStatus('ok'); } catch(e){ setSyncStatus('err'); }
+    showToast('Billetera eliminada');
+    renderWallets(); renderPresetGrid(); renderDashboard();
+  }, true);
 };
 
 // ── Presets de billeteras ──────────────────────────────────────
