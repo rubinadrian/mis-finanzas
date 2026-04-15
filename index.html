@@ -46,10 +46,15 @@
   .sync-status.ok { color: var(--green-text); background: var(--green-bg); border-color: rgba(29,158,117,0.2); }
   .sync-status.err { color: var(--red-text); background: var(--red-bg); border-color: rgba(226,75,74,0.2); }
 
-  .nav { display: flex; gap: 6px; margin-bottom: 2rem; background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 5px; width: fit-content; flex-wrap: wrap; }
-  .nav button { padding: 7px 18px; border-radius: 9px; border: none; background: transparent; color: var(--text2); cursor: pointer; font-size: 13px; font-family: var(--font); font-weight: 400; transition: all 0.15s; }
-  .nav button:hover { color: var(--text); background: var(--surface2); }
-  .nav button.active { background: var(--text); color: white; font-weight: 500; }
+  .bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; height: 64px; background: var(--surface); border-top: 0.5px solid var(--border); display: flex; align-items: center; justify-content: space-around; z-index: 50; padding: 0 8px; }
+  .bb-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; background: none; border: none; cursor: pointer; color: var(--text3); font-family: var(--font); padding: 8px 4px; transition: color 0.15s; }
+  .bb-item span { font-size: 10px; font-weight: 400; }
+  .bb-item.active { color: var(--text); }
+  .bb-item.active span { font-weight: 500; }
+  .bb-fab { width: 52px; height: 52px; border-radius: 50%; background: var(--text); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0; transition: transform 0.15s, opacity 0.15s; margin: 0 8px; }
+  .bb-fab:hover { opacity: 0.85; }
+  .bb-fab:active { transform: scale(0.93); }
+  .app { padding-bottom: 80px; }
 
   .section { display: none; }
   .section.active { display: block; }
@@ -124,6 +129,10 @@
   .modal-confirm { background: var(--text); border: none; color: white; }
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border2); border-top-color: var(--text); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  .fab-sheet { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; padding: 1rem; }
+  .fab-sheet-bg { position: absolute; inset: 0; background: rgba(0,0,0,0.3); }
+  .fab-sheet-box { position: relative; background: var(--surface); border-radius: var(--radius) var(--radius) 0 0; width: 100%; max-width: 540px; max-height: 90vh; overflow-y: auto; padding: 1.5rem 1.25rem 2rem; }
   .modal-danger { background: var(--red-bg); border: none; color: var(--red-text); }
   .toast { position:fixed; bottom:1.5rem; left:50%; transform:translateX(-50%); background:var(--text); color:white; padding:10px 20px; border-radius:var(--radius-sm); font-size:13px; z-index:200; opacity:0; transition:opacity 0.2s; pointer-events:none; }
   .toast.show { opacity:1; }
@@ -221,14 +230,6 @@ function showPromptModal(msg, placeholder, onOk) {
       </div>
     </div>
 
-    <div class="nav">
-      <button class="active" onclick="showTab('dashboard')">Resumen</button>
-      <button onclick="showTab('movimientos')">Movimientos</button>
-      <button onclick="showTab('nuevo')">+ Nuevo</button>
-      <button onclick="showTab('servicios')">Servicios</button>
-      <button onclick="showTab('billeteras')">Billeteras</button>
-    </div>
-
     <div class="section active" id="tab-dashboard">
       <div class="metrics-grid" id="wallet-metrics"><span class="spinner"></span></div>
       <div class="grid2" style="margin-bottom:1rem">
@@ -265,56 +266,6 @@ function showPromptModal(msg, placeholder, onOk) {
       </div>
     </div>
 
-    <div class="section" id="tab-nuevo">
-      <div class="card">
-        <h2>Registrar movimiento</h2>
-        <label>Tipo</label>
-        <div class="tag-row" id="tipo-tags">
-          <span class="tag sel" onclick="selTag(this,'tipo')">Gasto</span>
-          <span class="tag" onclick="selTag(this,'tipo')">Ingreso</span>
-          <span class="tag" onclick="selTag(this,'tipo')">Cuotas</span>
-          <span class="tag" onclick="selTag(this,'tipo')">Pago de servicios</span>
-          <span class="tag" onclick="selTag(this,'tipo')">Transferencia</span>
-        </div>
-        <div id="transferencia-form" style="display:none;margin-top:12px">
-          <div class="row2">
-            <div><label>Desde</label><select id="transfer-from"></select></div>
-            <div><label>Hacia</label><select id="transfer-to"></select></div>
-          </div>
-        </div>
-        <div id="cuotas-modo" style="display:none">
-          <div class="cuotas-toggle">
-            <button class="active" onclick="setCuotasMode('total',this)">Cargo total + cuotas</button>
-            <button onclick="setCuotasMode('manual',this)">Cuota individual</button>
-          </div>
-        </div>
-        <div id="campo-desc">
-          <label>Descripción</label>
-          <input type="text" id="desc" placeholder="Ej: Tarjeta Visa, Luz, Auto...">
-        </div>
-        <div class="row2">
-          <div><label>Monto ($)</label><input type="number" id="monto" placeholder="0"></div>
-          <div id="ncuotas-wrap" style="display:none"><label>Cant. cuotas</label><input type="number" id="ncuotas" placeholder="12" min="1"></div>
-        </div>
-        <div class="row2">
-          <div><label>Fecha</label><input type="date" id="fecha"></div>
-          <div id="campo-wallet"><label>Billetera</label><select id="wallet-sel"></select></div>
-        </div>
-        <div id="campo-cat">
-          <label>Categoría</label>
-          <div class="tag-row" id="cat-tags"></div>
-          <div style="margin-top:8px">
-            <span class="tag" style="border-style:dashed" onclick="agregarCategoria()">+ Nueva categoría</span>
-          </div>
-        </div>
-        <div id="venc-wrap" style="display:none">
-          <label>Día de vencimiento mensual</label>
-          <input type="number" id="venc-dia" placeholder="Ej: 10" min="1" max="31">
-        </div>
-        <button class="btn-primary" id="btn-guardar" onclick="guardarMovimiento()">Guardar movimiento</button>
-      </div>
-    </div>
-
     <div class="section" id="tab-billeteras">
       <div class="card"><h2>Mis billeteras</h2><div id="wallets-list"><span class="spinner"></span></div></div>
       <div class="card">
@@ -335,9 +286,85 @@ function showPromptModal(msg, placeholder, onOk) {
         </div>
       </div>
     </div>
+    <!-- Bottom bar -->
+    <div class="bottom-bar">
+      <button class="bb-item active" id="bb-dashboard" onclick="showTab('dashboard');setActive(this)">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span>Resumen</span>
+      </button>
+      <button class="bb-item" id="bb-movimientos" onclick="showTab('movimientos');setActive(this)">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+        <span>Movimientos</span>
+      </button>
+      <button class="bb-fab" onclick="abrirNuevo()">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+      <button class="bb-item" id="bb-servicios" onclick="showTab('servicios');setActive(this)">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/><path d="M12 6v6l4 2"/></svg>
+        <span>Servicios</span>
+      </button>
+      <button class="bb-item" id="bb-billeteras" onclick="showTab('billeteras');setActive(this)">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7z"/><path d="M16 12a1 1 0 1 0 2 0 1 1 0 0 0-2 0z" fill="currentColor" stroke="none"/></svg>
+        <span>Billeteras</span>
+      </button>
+    </div>
   </div>
 </div>
 
+<!-- Bottom sheet: nuevo movimiento -->
+<div class="fab-sheet" id="fab-sheet" style="display:none" onclick="cerrarNuevoSiClick(event)">
+  <div class="fab-sheet-bg"></div>
+  <div class="fab-sheet-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+      <h2 style="font-size:16px;font-weight:500;margin:0">Registrar movimiento</h2>
+      <button onclick="cerrarNuevo()" style="background:none;border:none;font-size:26px;line-height:1;cursor:pointer;color:var(--text2);padding:0">×</button>
+    </div>
+    <label>Tipo</label>
+    <div class="tag-row" id="tipo-tags">
+      <span class="tag sel" onclick="selTag(this,'tipo')">Gasto</span>
+      <span class="tag" onclick="selTag(this,'tipo')">Ingreso</span>
+      <span class="tag" onclick="selTag(this,'tipo')">Cuotas</span>
+      <span class="tag" onclick="selTag(this,'tipo')">Pago de servicios</span>
+      <span class="tag" onclick="selTag(this,'tipo')">Transferencia</span>
+    </div>
+    <div id="transferencia-form" style="display:none;margin-top:12px">
+      <div class="row2">
+        <div><label>Desde</label><select id="transfer-from"></select></div>
+        <div><label>Hacia</label><select id="transfer-to"></select></div>
+      </div>
+    </div>
+    <div id="cuotas-modo" style="display:none">
+      <div class="cuotas-toggle">
+        <button class="active" onclick="setCuotasMode('total',this)">Cargo total + cuotas</button>
+        <button onclick="setCuotasMode('manual',this)">Cuota individual</button>
+      </div>
+    </div>
+    <div id="campo-desc">
+      <label>Descripción</label>
+      <input type="text" id="desc" placeholder="Ej: Tarjeta Visa, Luz, Auto...">
+    </div>
+    <div class="row2">
+      <div><label>Monto ($)</label><input type="number" id="monto" placeholder="0"></div>
+      <div id="ncuotas-wrap" style="display:none"><label>Cant. cuotas</label><input type="number" id="ncuotas" placeholder="12" min="1"></div>
+    </div>
+    <div class="row2">
+      <div><label>Fecha</label><input type="date" id="fecha"></div>
+      <div id="campo-wallet"><label>Billetera</label><select id="wallet-sel"></select></div>
+    </div>
+    <div id="campo-cat">
+      <label>Categoría</label>
+      <div class="tag-row" id="cat-tags"></div>
+      <div style="margin-top:8px">
+        <span class="tag" style="border-style:dashed" onclick="agregarCategoria()">+ Nueva categoría</span>
+      </div>
+    </div>
+    <div id="venc-wrap" style="display:none">
+      <label>Día de vencimiento mensual</label>
+      <input type="number" id="venc-dia" placeholder="Ej: 10" min="1" max="31">
+    </div>
+    <button class="btn-primary" id="btn-guardar" onclick="guardarMovimiento()">Guardar movimiento</button>
+  </div>
+</div>
 <script type="module">
 import { initializeApp }        from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
@@ -507,14 +534,33 @@ async function procesarCuotasVencidas() {
 
 const fmt = n => '$' + Math.round(n).toLocaleString('es-AR');
 
+window.abrirNuevo = () => {
+  renderNuevoForm();
+  document.getElementById('fab-sheet').style.display='flex';
+  document.body.style.overflow='hidden';
+};
+
+window.cerrarNuevo = () => {
+  document.getElementById('fab-sheet').style.display='none';
+  document.body.style.overflow='';
+};
+
+window.cerrarNuevoSiClick = e => {
+  if (e.target.classList.contains('fab-sheet-bg') || e.target === document.getElementById('fab-sheet')) cerrarNuevo();
+};
+window.setActive = btn => {
+  document.querySelectorAll('.bb-item').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+};
+
 window.showTab = t => {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
-  document.querySelectorAll('.nav button')[['dashboard','movimientos','nuevo','servicios','billeteras'].indexOf(t)].classList.add('active');
+  const bbMap = { dashboard:'bb-dashboard', movimientos:'bb-movimientos', servicios:'bb-servicios', billeteras:'bb-billeteras' };
+  document.querySelectorAll('.bb-item').forEach(b => b.classList.remove('active'));
+  if (bbMap[t]) document.getElementById(bbMap[t])?.classList.add('active');
   if (t==='dashboard')   renderDashboard();
-  if (t==='movimientos') { renderMovimientos(); }
-  if (t==='nuevo')       renderNuevoForm();
+  if (t==='movimientos') renderMovimientos();
   if (t==='servicios')   renderServiciosActivos();
   if (t==='billeteras')  { renderWallets(); renderPresetGrid(); }
 };
@@ -605,6 +651,7 @@ window.guardarMovimiento = async () => {
       await setDoc(walletDoc(toId),   {nombre:wTo.nombre,  saldo:wTo.saldo,  color:wTo.color,  favicon:wTo.favicon||null});
       setSyncStatus('ok');
       document.getElementById('monto').value='';
+      cerrarNuevo();
       showTab('dashboard');
     } catch(e) { setSyncStatus('err'); showAlert('Error al guardar. Revisá tu conexión.'); console.error(e); }
     btn.disabled=false; btn.textContent='Guardar movimiento';
@@ -640,19 +687,8 @@ window.guardarMovimiento = async () => {
     setSyncStatus('ok');
     ['desc','monto','ncuotas','venc-dia'].forEach(id => document.getElementById(id).value='');
     document.getElementById('venc-wrap').style.display='none';
-    const esServicio = tipo==='Pago de servicios';
-    if (esServicio) {
-      // Quedar en el formulario listo para cargar otro servicio
-      // Pre-seleccionar "Pago de servicios" y mostrar venc-wrap
-      document.querySelectorAll('#tipo-tags .tag').forEach(t => {
-        t.classList.toggle('sel', t.textContent==='Pago de servicios');
-      });
-      document.getElementById('venc-wrap').style.display='block';
-      document.getElementById('fecha').value = new Date().toISOString().split('T')[0];
-      renderDashboard();
-    } else {
-      showTab('dashboard');
-    }
+    cerrarNuevo();
+    showTab('dashboard');
   } catch(e) { setSyncStatus('err'); showAlert('Error al guardar. Revisá tu conexión.'); console.error(e); }
   btn.disabled=false; btn.textContent='Guardar movimiento';
 };
