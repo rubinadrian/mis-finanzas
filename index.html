@@ -80,6 +80,8 @@
   .btn-sm { background: transparent; color: var(--text); border: 0.5px solid var(--border2); padding: 6px 14px; border-radius: var(--radius-sm); cursor: pointer; font-size: 12px; font-family: var(--font); transition: background 0.15s; }
   .btn-sm:hover { background: var(--surface2); }
   .btn-danger { background: transparent; color: var(--red-text); border: 0.5px solid rgba(162,45,45,0.25); padding: 6px 12px; border-radius: var(--radius-sm); cursor: pointer; font-size: 12px; font-family: var(--font); }
+  .btn-x { width: 28px; height: 28px; border-radius: 50%; border: 0.5px solid var(--border2); background: var(--surface2); color: var(--text3); cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; transition: all 0.15s; flex-shrink: 0; }
+  .btn-x:hover { background: var(--red-bg); color: var(--red-text); border-color: rgba(162,45,45,0.25); }
   .tag-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
   .tag { background: var(--surface2); border: 0.5px solid var(--border); border-radius: 999px; padding: 5px 14px; font-size: 13px; cursor: pointer; color: var(--text2); transition: all 0.12s; user-select: none; }
   .tag:hover { border-color: var(--border2); color: var(--text); }
@@ -248,11 +250,12 @@ function showPromptModal(msg, placeholder, onOk) {
 
     <div class="section" id="tab-movimientos">
       <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-          <h2 style="margin:0" id="mov-titulo">Historial — mes actual</h2>
+        <div style="margin-bottom:14px">
+          <h2 style="margin:0 0 10px" id="mov-titulo">Historial — mes actual</h2>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <select id="filtro-wallet" onchange="renderMovimientos()" style="width:auto;font-size:13px;padding:6px 10px;"></select>
-            <input type="month" id="filtro-mes" onchange="renderMovimientos()" style="width:auto;font-size:13px;padding:6px 10px;">
+            <select id="filtro-wallet" onchange="renderMovimientos()" style="width:auto;font-size:13px;padding:6px 10px;flex:1;min-width:120px"></select>
+            <select id="filtro-cat" onchange="renderMovimientos()" style="width:auto;font-size:13px;padding:6px 10px;flex:1;min-width:120px"></select>
+            <input type="month" id="filtro-mes" onchange="renderMovimientos()" style="width:auto;font-size:13px;padding:6px 10px;flex:1;min-width:120px">
           </div>
         </div>
         <div id="mov-list"><span class="spinner"></span></div>
@@ -878,23 +881,22 @@ function renderServiciosActivos() {
       const w = wallets.find(x=>x.id===s.walletId);
       html += `<div class="item-row">
         <div><div class="item-name">${s.desc}</div>
-        <div class="item-sub">Servicio mensual · ${w?.nombre||''}</div></div>
+        <div class="item-sub">Servicio mensual · ${w?.nombre||''} · día ${new Date(s.fecha+'T12:00:00').getDate()}</div></div>
         <div style="display:flex;gap:8px;align-items:center">
-          <button class="btn-sm" onclick="filtrarPorServicio('${s.desc.replace(/'/g,"\\'")}')">Ver pagos</button>
-          <button class="btn-danger" onclick="eliminarServicio('${s.desc.replace(/'/g,"\\'")}')">Eliminar</button>
+          <button class="btn-sm" onclick="editarMovimiento('${s.id}')">Editar</button>
+          <button class="btn-x" onclick="eliminarServicio('${s.desc.replace(/'/g,"\\'")}')">&#x2715;</button>
         </div>
       </div>`;
     });
     Object.entries(cuotasGrupos).forEach(([base, cuotas])=>{
-      const pagadas = cuotas.filter(c=>c.pagado).length;
+      const procesadas = cuotas.filter(c=>c.saldoDescontado).length;
       const total = cuotas.length;
       const w = wallets.find(x=>x.id===cuotas[0]?.walletId);
       html += `<div class="item-row">
         <div><div class="item-name">${base}</div>
-        <div class="item-sub">Cuotas ${pagadas}/${total} · ${w?.nombre||''}</div></div>
+        <div class="item-sub">Cuota ${procesadas}/${total} · ${w?.nombre||''}</div></div>
         <div style="display:flex;gap:8px;align-items:center">
-          <button class="btn-sm" onclick="filtrarPorServicio('${base.replace(/'/g,"\\'")}')">Ver cuotas</button>
-          <button class="btn-danger" onclick="eliminarCuotas('${base.replace(/'/g,"\\'")}')">Eliminar todas</button>
+          <button class="btn-x" onclick="eliminarCuotas('${base.replace(/'/g,"\\'")}')">&#x2715;</button>
         </div>
       </div>`;
     });
@@ -937,28 +939,43 @@ window.eliminarCuotas = async base => {
   }, true);
 };
 
-window.renderMovimientos = (catFiltro, descFiltro) => {
+window.renderMovimientos = (catFiltroParam, descFiltro) => {
+  // Populate wallet filter
   const sel = document.getElementById('filtro-wallet');
+  const prevWallet = sel.value;
   sel.innerHTML='<option value="">Todas las billeteras</option>'+wallets.map(w=>`<option value="${w.id}">${w.nombre}</option>`).join('');
+  if (prevWallet) sel.value = prevWallet;
   const filtroWallet = sel.value;
+
+  // Populate category filter
+  const catSel = document.getElementById('filtro-cat');
+  const prevCat = catFiltroParam || catSel.value;
+  catSel.innerHTML='<option value="">Todas las categorías</option>'+getCategorias().map(c=>`<option value="${c}">${c}</option>`).join('');
+  if (prevCat) catSel.value = prevCat;
+  const filtroCat = catSel.value;
 
   // Mes: default mes actual
   const mesFiltroEl = document.getElementById('filtro-mes');
   const now = new Date();
-  if (!mesFiltroEl.value && !catFiltro && !descFiltro) {
+  if (!mesFiltroEl.value && !filtroCat && !descFiltro) {
     mesFiltroEl.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   }
   const mesFiltro = mesFiltroEl.value;
 
   let list = [...movimientos];
   if (filtroWallet) list = list.filter(m=>m.walletId===filtroWallet);
-  if (mesFiltro && !catFiltro && !descFiltro) {
+  if (filtroCat) list = list.filter(m=>m.cat===filtroCat);
+  if (descFiltro) list = list.filter(m=>m.desc.includes(descFiltro));
+  if (mesFiltro && !filtroCat && !descFiltro) {
     const [fy,fm] = mesFiltro.split('-').map(Number);
     list = list.filter(m=>{ const d=new Date(m.fecha+'T12:00:00'); return d.getFullYear()===fy && d.getMonth()===fm-1; });
-    document.getElementById('mov-titulo').textContent = `Historial — ${mesFiltro}`;
   }
-  if (catFiltro) list = list.filter(m=>m.cat===catFiltro);
-  if (descFiltro) list = list.filter(m=>m.desc.includes(descFiltro)||m.desc===descFiltro);
+  // Update title
+  if (filtroCat) document.getElementById('mov-titulo').textContent = `Gastos — ${filtroCat}`;
+  else if (descFiltro) document.getElementById('mov-titulo').textContent = `Historial — ${descFiltro}`;
+  else if (mesFiltro) document.getElementById('mov-titulo').textContent = `Historial — ${mesFiltro}`;
+  else document.getElementById('mov-titulo').textContent = 'Historial';
+
   list.sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
   document.getElementById('mov-list').innerHTML = list.length===0 ? '<p class="empty">Sin movimientos</p>' :
     list.map(m=>{ const w=wallets.find(x=>x.id===m.walletId), ei=m.tipo==='Ingreso';
@@ -1004,7 +1021,7 @@ window.editarMovimiento = id => {
     </div>`:''}
     <div class="modal-btns">
       <button class="modal-cancel" onclick="document.getElementById('edit-modal').remove()">Cancelar</button>
-      <button class="btn-danger" style="flex:0.6" onclick="eliminarMovimiento('${id}')">Eliminar</button>
+      <button class="btn-x" style="width:36px;height:36px;font-size:15px" onclick="eliminarMovimiento('${id}')">&#x2715;</button>
       <button class="modal-confirm" onclick="confirmarEdicion('${id}')">Guardar</button>
     </div>
   </div>`;
@@ -1072,7 +1089,7 @@ function walletLogo(w) {
 
 function renderWallets() {
   document.getElementById('wallets-list').innerHTML = wallets.length===0 ? '<p class="empty">Sin billeteras</p>' :
-    wallets.map(w=>`<div class="item-row"><div class="item-name" style="display:flex;align-items:center;gap:8px;">${walletLogo(w)}${w.nombre}</div><div style="display:flex;align-items:center;gap:8px;"><span style="font-family:'DM Mono',monospace;font-size:14px;font-weight:500">${fmt(w.saldo||0)}</span><button class="btn-sm" onclick="editarSaldo('${w.id}')">Editar saldo</button><button class="btn-danger" onclick="eliminarWallet('${w.id}')">Eliminar</button></div></div>`).join('');
+    wallets.map(w=>`<div class="item-row"><div class="item-name" style="display:flex;align-items:center;gap:8px;">${walletLogo(w)}${w.nombre}</div><div style="display:flex;align-items:center;gap:8px;"><span style="font-family:'DM Mono',monospace;font-size:14px;font-weight:500">${fmt(w.saldo||0)}</span><button class="btn-sm" onclick="editarSaldo('${w.id}')">Editar saldo</button><button class="btn-x" onclick="eliminarWallet('${w.id}')">&#x2715;</button></div></div>`).join('');
 }
 
 window.editarSaldo = id => {
